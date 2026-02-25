@@ -225,6 +225,11 @@ For a broader cookbook, see `docs/EXAMPLES.md`.
 - `notebooks/nbimplot_examples.ipynb`
 - `notebooks/nbimplot_api_gallery.ipynb`
 - `notebooks/nbimplot_benchmarks.ipynb`
+- `notebooks/nbimplot_colab_complete.ipynb` (Colab-ready complete examples)
+
+Open the Colab notebook directly:
+
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Prinkesh/nbimplot/blob/main/notebooks/nbimplot_colab_complete.ipynb)
 
 ## Troubleshooting
 
