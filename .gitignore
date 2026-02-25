@@ -1,0 +1,9 @@
+__pycache__/
+.pytest_cache/
+*.pyc
+wasm/build/
+nbimplot/wasm/nbimplot_wasm.js
+nbimplot/wasm/nbimplot_wasm.wasm
+dist/
+dist_check/
+notebooks/.ipynb_checkpoints/

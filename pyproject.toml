@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "nbimplot"
+version = "0.1.8"
+description = "ImPlot-powered Jupyter plotting widget for interactive, million-point visualizations."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "nbimplot contributors" }]
+dependencies = [
+  "anywidget>=0.9.21",
+  "ipywidgets>=8.1.0",
+  "numpy>=1.24",
+  "traitlets>=5.14",
+]
+keywords = ["jupyter", "plotting", "implot", "widgets", "visualization"]
+classifiers = [
+  "Framework :: Jupyter",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+[project.urls]
+Homepage = "https://github.com/Prinkesh/nbimplot"
+Repository = "https://github.com/Prinkesh/nbimplot"
+Issues = "https://github.com/Prinkesh/nbimplot/issues"
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["nbimplot"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"nbimplot/wasm/nbimplot_wasm.js" = "nbimplot/wasm/nbimplot_wasm.js"
+"nbimplot/wasm/nbimplot_wasm.wasm" = "nbimplot/wasm/nbimplot_wasm.wasm"
+
+[tool.hatch.build]
+include = [
+  "nbimplot/*.py",
+  "nbimplot/*.js",
+  "nbimplot/wasm/*.js",
+  "nbimplot/wasm/*.wasm",
+]
+artifacts = [
+  "nbimplot/wasm/*.js",
+  "nbimplot/wasm/*.wasm",
+]
