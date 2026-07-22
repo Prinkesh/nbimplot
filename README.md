@@ -18,6 +18,10 @@ hardened with tests, packaging checks, and runtime validation.
 - `nbimplot`: Python/Jupyter notebook package
 - `@nbimplot/web`: standalone browser package for web apps
 
+Public web demo:
+
+- https://prinkesh.github.io/nbimplot/
+
 ## Upstream Libraries
 
 `nbimplot` is built on top of these upstream projects:
@@ -105,6 +109,20 @@ plot.dispose();
 
 The web package lives in `packages/web`. See `docs/WEB.md` and
 `packages/web/examples/plain/index.html`.
+
+The repository also includes a full Next.js examples gallery that can run
+locally or as a static GitHub Pages site:
+
+```bash
+npm install
+npm run dev -- --hostname 0.0.0.0 --port 3001
+```
+
+For GitHub Pages, the workflow in `.github/workflows/pages.yml` builds with:
+
+```bash
+NEXT_PUBLIC_BASE_PATH=/nbimplot npm run build
+```
 
 ## Interaction Defaults
 
