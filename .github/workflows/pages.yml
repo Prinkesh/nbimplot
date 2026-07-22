@@ -29,7 +29,7 @@ jobs:
         run: npm ci
 
       - name: Build static demo
-        run: NEXT_PUBLIC_BASE_PATH=/nbimplot npm run build
+        run: NEXT_PUBLIC_BASE_PATH=/nbimplot NEXT_PUBLIC_DEMO_VERSION=${{ github.sha }} npm run build
 
       - name: Publish to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4
