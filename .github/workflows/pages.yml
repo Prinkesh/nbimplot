@@ -28,8 +28,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Prepare versioned demo asset
+        run: cp public/demo.js public/demo-${{ github.sha }}.js
+
       - name: Build static demo
-        run: NEXT_PUBLIC_BASE_PATH=/nbimplot NEXT_PUBLIC_DEMO_VERSION=${{ github.sha }} npm run build
+        run: NEXT_PUBLIC_BASE_PATH=/nbimplot NEXT_PUBLIC_DEMO_FILE=demo-${{ github.sha }}.js npm run build
 
       - name: Publish to gh-pages branch
         uses: peaceiris/actions-gh-pages@v4

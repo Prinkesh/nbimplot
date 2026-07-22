@@ -10,3 +10,4 @@ notebooks/.ipynb_checkpoints/
 node_modules/
 .next/
 out/
+public/demo-*.js
