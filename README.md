@@ -124,6 +124,12 @@ For GitHub Pages, the workflow in `.github/workflows/pages.yml` builds with:
 NEXT_PUBLIC_BASE_PATH=/nbimplot npm run build
 ```
 
+GitHub Pages should be configured once as:
+
+- Source: `Deploy from a branch`
+- Branch: `gh-pages`
+- Folder: `/root`
+
 ## Interaction Defaults
 
 - initial X/Y view auto-fits to available data
