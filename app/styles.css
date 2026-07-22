@@ -280,7 +280,8 @@ code {
   }
 }
 
-.plot-error {
+.plot-error,
+.plot-placeholder {
   align-items: center;
   color: #ffd8c8;
   display: flex;
@@ -290,4 +291,8 @@ code {
   line-height: 1.5;
   padding: 24px;
   text-align: center;
+}
+
+.plot-placeholder {
+  color: #d7d0c2;
 }

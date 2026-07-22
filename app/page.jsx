@@ -130,7 +130,7 @@ export default function Page() {
         </div>
         <div>
           <span>Examples</span>
-          <strong>{examples.length} canvases</strong>
+          <strong>{examples.length} lazy plots</strong>
         </div>
         <div>
           <span>Last frame</span>
@@ -139,7 +139,7 @@ export default function Page() {
       </section>
 
       <section className="notes-panel">
-        <strong>Interaction checklist:</strong> left-drag pans, wheel zooms, scroll over axes zooms that axis, right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot behavior, double-click autofits.
+        <strong>Interaction checklist:</strong> examples lazy-load as they approach the viewport. Once loaded, left-drag pans, wheel zooms, scroll over axes zooms that axis, right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot behavior, double-click autofits.
       </section>
 
       <section className="examples-grid">

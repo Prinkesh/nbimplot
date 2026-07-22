@@ -118,6 +118,9 @@ npm install
 npm run dev -- --hostname 0.0.0.0 --port 3001
 ```
 
+The gallery lazy-loads examples as their cards approach the viewport and
+releases offscreen canvases to keep active WebGL contexts bounded.
+
 For GitHub Pages, the workflow in `.github/workflows/pages.yml` builds with:
 
 ```bash

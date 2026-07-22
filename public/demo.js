@@ -3,10 +3,20 @@ import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js";
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
 
+const MAX_ACTIVE_PLOTS = 5;
+
 const state = {
   plots: [],
+  plotById: new Map(),
   timers: [],
   controllers: [],
+  loadPromises: new Map(),
+  lazyChain: Promise.resolve(),
+  loadedIds: new Set(),
+  visitedIds: new Set(),
+  visibleIds: new Set(),
+  loadingIds: new Set(),
+  builders: new Map(),
   colormapPlots: [],
   lineSeries: null,
   lineData: null,
@@ -15,7 +25,16 @@ const state = {
   streamPlot: null,
   streamSample: 0,
   streaming: false,
+  observer: null,
+  totalExamples: 0,
+  activeColormap: "Viridis",
+  disposed: false,
   dispose() {
+    this.disposed = true;
+    if (this.observer) {
+      this.observer.disconnect();
+      this.observer = null;
+    }
     for (const timer of this.timers) window.clearInterval(timer);
     this.timers = [];
     for (const controller of this.controllers) controller.abort();
@@ -28,6 +47,15 @@ const state = {
       }
     }
     this.plots = [];
+    this.plotById.clear();
+    this.loadPromises.clear();
+    this.lazyChain = Promise.resolve();
+    this.loadedIds.clear();
+    this.visitedIds.clear();
+    this.visibleIds.clear();
+    this.loadingIds.clear();
+    this.builders.clear();
+    this.colormapPlots = [];
   },
 };
 window.__nbimplotExamplesDemo = state;
@@ -57,6 +85,17 @@ const interactionReadout = document.querySelector("#interaction-readout");
 
 function setMode(text) {
   if (mode) mode.textContent = text;
+}
+
+function setHostStatus(id, text) {
+  const host = document.querySelector(`#${id}`);
+  if (!host) return;
+  if (host.children.length > 0 && !host.firstElementChild?.classList.contains("plot-placeholder")) return;
+  host.replaceChildren();
+  const panel = document.createElement("div");
+  panel.className = "plot-placeholder";
+  panel.textContent = text;
+  host.appendChild(panel);
 }
 
 function setHostError(id, error) {
@@ -142,6 +181,7 @@ function makeImage(rows, cols) {
 }
 
 async function mountPlot(id, options = {}) {
+  if (state.disposed) throw new Error("nbimplot demo was disposed before plot creation.");
   const host = document.querySelector(`#${id}`);
   if (!host) throw new Error(`Missing plot host: ${id}`);
   host.replaceChildren();
@@ -151,6 +191,7 @@ async function mountPlot(id, options = {}) {
     ...options,
   });
   state.plots.push(plot);
+  state.plotById.set(id, plot);
   return plot;
 }
 
@@ -170,6 +211,156 @@ function on(element, type, listener) {
   const controller = new AbortController();
   element.addEventListener(type, listener, { signal: controller.signal });
   state.controllers.push(controller);
+}
+
+function updateLoadMode() {
+  const active = state.plotById.size;
+  const visited = state.visitedIds.size;
+  const total = state.totalExamples || ids.length;
+  if (visited === total) {
+    setMode(`${active} active | ${visited}/${total} examples visited`);
+  } else {
+    setMode(`${active} active | ${visited}/${total} visited - scroll for more`);
+  }
+}
+
+function resetHandlesForReleasedPlot(id) {
+  if (id === "line-lod-plot") {
+    state.lineSeries = null;
+    state.lineData = null;
+  }
+  if (id === "streaming-plot") {
+    if (state.streaming) {
+      for (const timer of state.timers) window.clearInterval(timer);
+      state.timers = [];
+      state.streaming = false;
+      if (streamButton) streamButton.textContent = "Start Stream";
+    }
+    state.streamHandle = null;
+    state.streamPlot = null;
+  }
+  if (id === "drag-plot" && interactionReadout) {
+    interactionReadout.textContent = "Interaction events: move a drag primitive.";
+  }
+}
+
+function releaseExample(id, message = "Released offscreen to keep WebGL contexts low. Scroll near this card to reload.") {
+  const plot = state.plotById.get(id);
+  if (!plot) return;
+
+  try {
+    plot.dispose();
+  } catch (error) {
+    // Some browser/headless WebGL stacks report noisy teardown errors after
+    // context loss. The gallery still removes the DOM wrapper and drops refs.
+    void error;
+  } finally {
+    plot.wrapper?.remove?.();
+  }
+
+  state.plotById.delete(id);
+  state.plots = state.plots.filter((candidate) => candidate !== plot);
+  state.colormapPlots = state.colormapPlots.filter((candidate) => candidate !== plot);
+  state.loadedIds.delete(id);
+  state.loadPromises.delete(id);
+  resetHandlesForReleasedPlot(id);
+  setHostStatus(id, message);
+  updateLoadMode();
+}
+
+function enforceActiveBudget() {
+  if (state.plotById.size <= MAX_ACTIVE_PLOTS) return;
+  for (const id of state.plotById.keys()) {
+    if (state.visibleIds.has(id)) continue;
+    releaseExample(id);
+    if (state.plotById.size <= MAX_ACTIVE_PLOTS) break;
+  }
+}
+
+function loadExample(id) {
+  if (state.plotById.has(id)) return Promise.resolve(true);
+  if (state.loadPromises.has(id)) return state.loadPromises.get(id);
+  const builder = state.builders.get(id);
+  if (!builder) return Promise.resolve(false);
+
+  state.loadingIds.add(id);
+  const host = document.querySelector(`#${id}`);
+  if (host) {
+    host.replaceChildren();
+    const panel = document.createElement("div");
+    panel.className = "plot-placeholder";
+    panel.textContent = "Loading WASM plot...";
+    host.appendChild(panel);
+  }
+
+  const promise = state.lazyChain
+    .then(() => (state.disposed || !state.visibleIds.has(id) ? null : runExample(id, builder)))
+    .then((plot) => {
+      state.loadingIds.delete(id);
+      state.loadPromises.delete(id);
+      if (plot) {
+        state.loadedIds.add(id);
+        state.visitedIds.add(id);
+        if (state.visibleIds.has(id)) {
+          enforceActiveBudget();
+        } else {
+          releaseExample(id);
+        }
+      } else if (!state.visibleIds.has(id)) {
+        setHostStatus(id, "Scroll near this card to load the WASM plot.");
+      }
+      updateLoadMode();
+      return Boolean(plot);
+    })
+    .catch((error) => {
+      state.loadingIds.delete(id);
+      state.loadPromises.delete(id);
+      console.error(`nbimplot lazy load failed: ${id}`, error);
+      setHostError(id, error);
+      updateLoadMode();
+      return false;
+    });
+
+  state.loadPromises.set(id, promise);
+  state.lazyChain = promise.catch(() => false);
+  return promise;
+}
+
+function setupLazyLoading() {
+  for (const id of ids) {
+    setHostStatus(id, "Scroll near this card to load the WASM plot.");
+  }
+
+  if (!("IntersectionObserver" in window)) {
+    state.visibleIds.add("line-lod-plot");
+    state.visibleIds.add("streaming-plot");
+    loadExample("line-lod-plot");
+    loadExample("streaming-plot");
+    setMode("lazy loading unavailable - top examples loaded");
+    return;
+  }
+
+  state.observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      const id = entry.target.id;
+      if (entry.isIntersecting) {
+        state.visibleIds.add(id);
+        loadExample(id);
+      } else {
+        state.visibleIds.delete(id);
+        releaseExample(id);
+      }
+    }
+  }, {
+    root: null,
+    rootMargin: "450px 0px 550px 0px",
+    threshold: 0.01,
+  });
+
+  for (const id of ids) {
+    const host = document.querySelector(`#${id}`);
+    if (host) state.observer.observe(host);
+  }
 }
 
 async function buildLineLod() {
@@ -335,7 +526,7 @@ async function buildDistributions() {
   }
   const plot = await mountPlot("distribution-plot", { title: "Histogram + Density Heatmap" });
   plot.setSubplots(1, 2, { noResize: false });
-  plot.setColormap(colormapSelect?.value || "Viridis");
+  plot.setColormap(state.activeColormap);
   plot.histogram("returns", values, { bins: 80, subplotIndex: 0 });
   plot.histogram2d("joint density", x, y, {
     xBins: 80,
@@ -353,7 +544,7 @@ async function buildDistributions() {
 async function buildHeatmapImage() {
   const plot = await mountPlot("heatmap-image-plot", { title: "Heatmap + RGB Image" });
   plot.setSubplots(1, 2, { noResize: false });
-  plot.setColormap(colormapSelect?.value || "Viridis");
+  plot.setColormap(state.activeColormap);
   plot.heatmap("sensor grid", makeMatrix(96, 144), {
     rows: 96,
     cols: 144,
@@ -479,7 +670,7 @@ async function buildDrag() {
 
 async function buildColormapWidgets() {
   const plot = await mountPlot("colormap-plot", { title: "Colormap Widgets" });
-  plot.setColormap(colormapSelect?.value || "Viridis");
+  plot.setColormap(state.activeColormap);
   plot.heatmap("surface", makeMatrix(72, 120, 0.6), {
     rows: 72,
     cols: 120,
@@ -503,7 +694,7 @@ async function main() {
     return;
   }
 
-  setMode("loading wasm");
+  state.activeColormap = colormapSelect?.value || "Viridis";
 
   const builders = [
     ["line-lod-plot", buildLineLod],
@@ -520,23 +711,21 @@ async function main() {
     ["colormap-plot", buildColormapWidgets],
   ];
 
-  let loaded = 0;
-  for (const [id, builder] of builders) {
-    setMode(`loading ${loaded + 1}/${builders.length}`);
-    const plot = await runExample(id, builder);
-    if (plot) loaded += 1;
-  }
+  state.totalExamples = builders.length;
+  state.builders = new Map(builders);
+  updateLoadMode();
+  setupLazyLoading();
 
-  setMode(`${loaded}/${builders.length} examples ready`);
-
-  on(updateButton, "click", () => {
+  on(updateButton, "click", async () => {
+    await loadExample("line-lod-plot");
     if (!state.lineSeries || !state.lineData) return;
     state.linePhase += 0.55;
     makeSignal(state.lineData, state.linePhase);
     state.lineSeries.setData(state.lineData);
   });
 
-  on(streamButton, "click", () => {
+  on(streamButton, "click", async () => {
+    await loadExample("streaming-plot");
     if (!state.streamHandle) return;
     state.streaming = !state.streaming;
     streamButton.textContent = state.streaming ? "Stop Stream" : "Start Stream";
@@ -554,7 +743,8 @@ async function main() {
   });
 
   on(colormapSelect, "change", () => {
-    for (const plot of state.colormapPlots) plot.setColormap(colormapSelect.value);
+    state.activeColormap = colormapSelect.value;
+    for (const plot of state.colormapPlots) plot.setColormap(state.activeColormap);
   });
 
   window.addEventListener("beforeunload", () => state.dispose(), { once: true });
