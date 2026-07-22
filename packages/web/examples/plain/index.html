@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>nbimplot web demo</title>
+    <style>
+      :root {
+        color: #18181b;
+        background: #f4f4f5;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+      }
+
+      body {
+        margin: 0;
+      }
+
+      main {
+        display: grid;
+        gap: 18px;
+        padding: 24px;
+      }
+
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 24px;
+        font-weight: 700;
+      }
+
+      button {
+        border: 1px solid #a1a1aa;
+        background: #fff;
+        color: #18181b;
+        padding: 8px 12px;
+        border-radius: 6px;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background: #fafafa;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 18px;
+      }
+
+      .plot {
+        min-height: 360px;
+        border: 1px solid #d4d4d8;
+        background: #fff;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>nbimplot web demo</h1>
+        <button id="update" type="button">Update Data</button>
+      </header>
+
+      <section class="grid">
+        <div id="line" class="plot"></div>
+        <div id="heatmap" class="plot"></div>
+      </section>
+    </main>
+
+    <script type="module">
+      import { createPlot } from "../../src/index.js";
+
+      const n = 1_000_000;
+      const y = new Float32Array(n);
+      for (let i = 0; i < n; i += 1) {
+        y[i] = Math.sin(i * 0.001) + 0.18 * Math.sin(i * 0.017);
+      }
+
+      const linePlot = await createPlot("#line", {
+        width: 1100,
+        height: 360,
+        title: "Million Point Line",
+        responsive: true,
+        crosshairs: true,
+      });
+      const line = linePlot.line("signal", y, {
+        color: "#2563eb",
+        lineWeight: 2,
+      });
+
+      const rows = 80;
+      const cols = 120;
+      const z = new Float32Array(rows * cols);
+      for (let r = 0; r < rows; r += 1) {
+        for (let c = 0; c < cols; c += 1) {
+          z[r * cols + c] = Math.sin(r * 0.15) * Math.cos(c * 0.09);
+        }
+      }
+
+      const heatmapPlot = await createPlot("#heatmap", {
+        width: 1100,
+        height: 360,
+        title: "Heatmap",
+        responsive: true,
+        colormap: "Viridis",
+      });
+      heatmapPlot.heatmap("z", z, {
+        rows,
+        cols,
+        labelFmt: "",
+        showColorbar: true,
+        colorbarLabel: "Intensity",
+      });
+
+      document.querySelector("#update").addEventListener("click", () => {
+        for (let i = 0; i < n; i += 1) {
+          y[i] = Math.sin(i * 0.001 + performance.now() * 0.001) + 0.18 * Math.sin(i * 0.017);
+        }
+        line.setData(y);
+      });
+    </script>
+  </body>
+</html>

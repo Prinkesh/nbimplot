@@ -13,6 +13,11 @@ The runtime is strict: ImPlot + WASM + WebGL2 are required.
 Project note: `nbimplot` was vibe coded with Codex, then
 hardened with tests, packaging checks, and runtime validation.
 
+`nbimplot` now has two surfaces:
+
+- `nbimplot`: Python/Jupyter notebook package
+- `@nbimplot/web`: standalone browser package for web apps
+
 ## Upstream Libraries
 
 `nbimplot` is built on top of these upstream projects:
@@ -61,6 +66,45 @@ p.show()
 h.set_data((0.8 * y).astype(np.float32))
 p.render()
 ```
+
+## Direct Web App Usage
+
+Use `@nbimplot/web` when you want ImPlot/WASM rendering in a normal browser
+application without Jupyter:
+
+```bash
+npm install /path/to/nbimplot/packages/web
+```
+
+After publishing the web package to npm:
+
+```bash
+npm install @nbimplot/web
+```
+
+```js
+import { createPlot } from "@nbimplot/web";
+
+const plot = await createPlot("#plot", {
+  width: 900,
+  height: 450,
+  title: "Signal",
+});
+
+const y = new Float32Array(1_000_000);
+for (let i = 0; i < y.length; i += 1) {
+  y[i] = Math.sin(i * 0.001);
+}
+
+const h = plot.line("mid", y);
+plot.render();
+
+h.setData(y);
+plot.dispose();
+```
+
+The web package lives in `packages/web`. See `docs/WEB.md` and
+`packages/web/examples/plain/index.html`.
 
 ## Interaction Defaults
 

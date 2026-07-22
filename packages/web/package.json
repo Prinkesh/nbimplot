@@ -1,0 +1,40 @@
+{
+  "name": "@nbimplot/web",
+  "version": "0.1.8",
+  "description": "Standalone ImPlot + WASM plotting for browser web apps.",
+  "type": "module",
+  "module": "./src/index.js",
+  "main": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./wasm/nbimplot_wasm.js": "./wasm/nbimplot_wasm.js",
+    "./wasm/nbimplot_wasm.wasm": "./wasm/nbimplot_wasm.wasm"
+  },
+  "files": [
+    "src",
+    "wasm",
+    "README.md"
+  ],
+  "keywords": [
+    "implot",
+    "imgui",
+    "wasm",
+    "webgl",
+    "plotting",
+    "visualization"
+  ],
+  "homepage": "https://github.com/Prinkesh/nbimplot",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/Prinkesh/nbimplot.git",
+    "directory": "packages/web"
+  },
+  "bugs": {
+    "url": "https://github.com/Prinkesh/nbimplot/issues"
+  },
+  "license": "MIT",
+  "sideEffects": false,
+  "scripts": {
+    "check": "node --check src/index.js"
+  }
+}
