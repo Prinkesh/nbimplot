@@ -7,3 +7,5 @@ nbimplot/wasm/nbimplot_wasm.wasm
 dist/
 dist_check/
 notebooks/.ipynb_checkpoints/
+node_modules/
+.next/
