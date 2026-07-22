@@ -3,7 +3,7 @@ import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js";
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
 
-const MAX_ACTIVE_PLOTS = 5;
+const MAX_ACTIVE_PLOTS = 3;
 
 const state = {
   plots: [],
@@ -353,7 +353,7 @@ function setupLazyLoading() {
     }
   }, {
     root: null,
-    rootMargin: "450px 0px 550px 0px",
+    rootMargin: "180px 0px 260px 0px",
     threshold: 0.01,
   });
 

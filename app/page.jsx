@@ -1,5 +1,20 @@
 import DemoLoader from "./DemoLoader";
 
+const stats = [
+  ["Runtime", "Strict WASM"],
+  ["Renderer", "ImPlot + WebGL2"],
+  ["Transport", "Typed arrays"],
+  ["LOD", "Min/max buckets"],
+];
+
+const pipeline = [
+  "Notebook API",
+  "Binary buffers",
+  "WASM heap",
+  "ImGui + ImPlot",
+  "WebGL2 canvas",
+];
+
 const examples = [
   {
     id: "line-lod-plot",
@@ -90,15 +105,54 @@ const examples = [
 export default function Page() {
   return (
     <main className="demo-shell">
-      <section className="hero-panel">
-        <div>
-          <p className="eyebrow">ImPlot + WASM + WebGL2</p>
-          <h1>nbimplot examples gallery</h1>
-          <p className="hero-copy">
-            Browser demo for strict WASM/ImPlot notebook-grade plotting. Every canvas below is rendered by the same WASM core used by the package.
-          </p>
+      <nav className="topbar" aria-label="Project links">
+        <a className="brand-mark" href="https://github.com/Prinkesh/nbimplot">
+          <span className="brand-glyph">nb</span>
+          <span>nbimplot</span>
+        </a>
+        <div className="topbar-links">
+          <a href="https://pypi.org/project/nbimplot/">PyPI</a>
+          <a href="https://www.npmjs.com/package/@nbimplot/web">npm</a>
+          <a href="https://github.com/Prinkesh/nbimplot">GitHub</a>
         </div>
-        <div className="toolbar" aria-label="Global demo controls">
+      </nav>
+
+      <section className="hero-panel">
+        <div className="hero-copy-block">
+          <p className="eyebrow">ImPlot quality, notebook reach</p>
+          <h1>Fast plotting for serious data in notebooks and web apps.</h1>
+          <p className="hero-copy">
+            nbimplot renders inside notebook output cells with the same strict WASM/ImPlot
+            core shown here: typed-array uploads, screen-resolution LOD, native pan/zoom,
+            hover inspection, context menus, subplots, colormaps, and streaming updates.
+          </p>
+          <div className="hero-actions">
+            <a className="primary-link" href="#examples">Explore Examples</a>
+            <a className="secondary-link" href="https://github.com/Prinkesh/nbimplot">View Source</a>
+          </div>
+        </div>
+        <div className="hero-card" aria-label="Rendering pipeline">
+          <div className="hero-card-header">
+            <span>Pipeline</span>
+            <strong>No JS renderer</strong>
+          </div>
+          <ol className="pipeline-list">
+            {pipeline.map((step) => (
+              <li key={step}>{step}</li>
+            ))}
+          </ol>
+          <div className="hero-card-footer">
+            Interaction cost scales with canvas pixels, not raw point count.
+          </div>
+        </div>
+      </section>
+
+      <section className="control-panel" aria-label="Global demo controls">
+        <div className="control-copy">
+          <span>Live Controls</span>
+          <strong>Drive the loaded WASM plots</strong>
+        </div>
+        <div className="toolbar">
           <button id="update-data" type="button">Update Data</button>
           <button id="toggle-stream" type="button">Start Stream</button>
           <button id="autoscale" type="button">Autoscale All</button>
@@ -120,10 +174,12 @@ export default function Page() {
       </section>
 
       <section className="metrics" aria-live="polite">
-        <div>
-          <span>Package</span>
-          <strong>@nbimplot/web</strong>
-        </div>
+        {stats.map(([label, value]) => (
+          <div key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
         <div>
           <span>Mode</span>
           <strong id="mode">initializing</strong>
@@ -139,19 +195,42 @@ export default function Page() {
       </section>
 
       <section className="notes-panel">
-        <strong>Interaction checklist:</strong> examples lazy-load as they approach the viewport. Once loaded, left-drag pans, wheel zooms, scroll over axes zooms that axis, right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot behavior, double-click autofits.
+        <strong>Interaction checklist:</strong> examples lazy-load as they approach the
+        viewport and offscreen canvases are released to keep WebGL contexts bounded.
+        Once loaded, left-drag pans, wheel zooms, scroll over axes zooms that axis,
+        right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot
+        behavior, and double-click autofits.
+      </section>
+
+      <section id="examples" className="examples-heading">
+        <p className="eyebrow">Examples Gallery</p>
+        <h2>Every supported plot primitive, grouped like release documentation.</h2>
+        <p>
+          These canvases are intentionally lazy-loaded. Scroll through the gallery to
+          verify multiple independent WASM sessions, lifecycle cleanup, interaction
+          primitives, and colormap propagation.
+        </p>
       </section>
 
       <section className="examples-grid">
-        {examples.map((example) => (
+        {examples.map((example, index) => (
           <article className="example-card" key={example.id}>
             <div className="example-copy">
-              <p className="section-label">{example.section}</p>
+              <div className="example-kicker">
+                <span>{String(index + 1).padStart(2, "0")}</span>
+                <p className="section-label">{example.section}</p>
+              </div>
               <h2>{example.title}</h2>
               <p>{example.text}</p>
               <pre><code>{example.code}</code></pre>
             </div>
-            <div id={example.id} className="plot-host" />
+            <div className="plot-frame">
+              <div className="plot-frame-top">
+                <span>{example.title}</span>
+                <i aria-hidden="true" />
+              </div>
+              <div id={example.id} className="plot-host" />
+            </div>
             {example.id === "drag-plot" ? (
               <p id="interaction-readout" className="readout">Interaction events: move a drag primitive.</p>
             ) : null}

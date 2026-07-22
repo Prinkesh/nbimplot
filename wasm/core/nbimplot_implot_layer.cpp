@@ -65,18 +65,109 @@ LayerState *get_state(const ImPlotLayer *layer) {
 }
 
 ImVec4 color_for_slot(std::int32_t slot) {
-  static const std::array<ImVec4, 8> kSeriesColors = {
-      ImVec4(0.114f, 0.306f, 0.847f, 1.0f), // #1d4ed8
-      ImVec4(0.918f, 0.345f, 0.047f, 1.0f), // #ea580c
-      ImVec4(0.086f, 0.639f, 0.290f, 1.0f), // #16a34a
-      ImVec4(0.745f, 0.071f, 0.235f, 1.0f), // #be123c
-      ImVec4(0.486f, 0.227f, 0.918f, 1.0f), // #7c3aed
-      ImVec4(0.059f, 0.463f, 0.431f, 1.0f), // #0f766e
-      ImVec4(0.792f, 0.541f, 0.016f, 1.0f), // #ca8a04
-      ImVec4(0.012f, 0.412f, 0.631f, 1.0f), // #0369a1
+  static const std::array<ImVec4, 10> kSeriesColors = {
+      ImVec4(0.294f, 0.824f, 0.753f, 1.0f), // #4bd2c0
+      ImVec4(0.851f, 0.475f, 0.271f, 1.0f), // #d97945
+      ImVec4(0.784f, 0.949f, 0.420f, 1.0f), // #c8f26b
+      ImVec4(0.557f, 0.922f, 0.863f, 1.0f), // #8debdc
+      ImVec4(0.945f, 0.702f, 0.435f, 1.0f), // #f1b36f
+      ImVec4(0.478f, 0.557f, 0.988f, 1.0f), // #7a8efc
+      ImVec4(0.957f, 0.435f, 0.663f, 1.0f), // #f46fa9
+      ImVec4(0.624f, 0.851f, 1.000f, 1.0f), // #9fd9ff
+      ImVec4(0.886f, 0.792f, 1.000f, 1.0f), // #e2caff
+      ImVec4(1.000f, 0.902f, 0.631f, 1.0f), // #ffe6a1
   };
   const std::size_t idx = static_cast<std::size_t>(std::abs(slot)) % kSeriesColors.size();
   return kSeriesColors[idx];
+}
+
+void apply_nbimplot_theme() {
+  ImGui::StyleColorsDark();
+
+  ImGuiStyle &style = ImGui::GetStyle();
+  style.WindowPadding = ImVec2(13.0f, 12.0f);
+  style.FramePadding = ImVec2(9.0f, 6.0f);
+  style.ItemSpacing = ImVec2(9.0f, 7.0f);
+  style.ItemInnerSpacing = ImVec2(7.0f, 5.0f);
+  style.WindowRounding = 9.0f;
+  style.ChildRounding = 8.0f;
+  style.PopupRounding = 9.0f;
+  style.FrameRounding = 7.0f;
+  style.GrabRounding = 7.0f;
+  style.ScrollbarRounding = 9.0f;
+  style.WindowBorderSize = 1.0f;
+  style.PopupBorderSize = 1.0f;
+  style.FrameBorderSize = 1.0f;
+
+  ImVec4 *colors = style.Colors;
+  colors[ImGuiCol_Text] = ImVec4(0.965f, 0.941f, 0.875f, 1.0f);
+  colors[ImGuiCol_TextDisabled] = ImVec4(0.420f, 0.475f, 0.490f, 1.0f);
+  colors[ImGuiCol_WindowBg] = ImVec4(0.039f, 0.059f, 0.071f, 0.985f);
+  colors[ImGuiCol_ChildBg] = ImVec4(0.045f, 0.067f, 0.078f, 0.960f);
+  colors[ImGuiCol_PopupBg] = ImVec4(0.055f, 0.078f, 0.090f, 0.985f);
+  colors[ImGuiCol_Border] = ImVec4(0.294f, 0.824f, 0.753f, 0.210f);
+  colors[ImGuiCol_BorderShadow] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+  colors[ImGuiCol_FrameBg] = ImVec4(0.078f, 0.118f, 0.137f, 0.960f);
+  colors[ImGuiCol_FrameBgHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.180f);
+  colors[ImGuiCol_FrameBgActive] = ImVec4(0.294f, 0.824f, 0.753f, 0.280f);
+  colors[ImGuiCol_TitleBg] = ImVec4(0.039f, 0.059f, 0.071f, 1.0f);
+  colors[ImGuiCol_TitleBgActive] = ImVec4(0.071f, 0.106f, 0.122f, 1.0f);
+  colors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.039f, 0.059f, 0.071f, 0.880f);
+  colors[ImGuiCol_MenuBarBg] = ImVec4(0.063f, 0.094f, 0.110f, 1.0f);
+  colors[ImGuiCol_ScrollbarBg] = ImVec4(0.039f, 0.059f, 0.071f, 0.650f);
+  colors[ImGuiCol_ScrollbarGrab] = ImVec4(0.294f, 0.824f, 0.753f, 0.320f);
+  colors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.500f);
+  colors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.784f, 0.949f, 0.420f, 0.700f);
+  colors[ImGuiCol_CheckMark] = ImVec4(0.784f, 0.949f, 0.420f, 1.0f);
+  colors[ImGuiCol_SliderGrab] = ImVec4(0.294f, 0.824f, 0.753f, 0.850f);
+  colors[ImGuiCol_SliderGrabActive] = ImVec4(0.784f, 0.949f, 0.420f, 1.0f);
+  colors[ImGuiCol_Button] = ImVec4(0.294f, 0.824f, 0.753f, 0.120f);
+  colors[ImGuiCol_ButtonHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.260f);
+  colors[ImGuiCol_ButtonActive] = ImVec4(0.851f, 0.475f, 0.271f, 0.360f);
+  colors[ImGuiCol_Header] = ImVec4(0.294f, 0.824f, 0.753f, 0.150f);
+  colors[ImGuiCol_HeaderHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.260f);
+  colors[ImGuiCol_HeaderActive] = ImVec4(0.851f, 0.475f, 0.271f, 0.300f);
+  colors[ImGuiCol_Separator] = ImVec4(0.294f, 0.824f, 0.753f, 0.180f);
+  colors[ImGuiCol_SeparatorHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.420f);
+  colors[ImGuiCol_SeparatorActive] = ImVec4(0.784f, 0.949f, 0.420f, 0.560f);
+  colors[ImGuiCol_ResizeGrip] = ImVec4(0.294f, 0.824f, 0.753f, 0.160f);
+  colors[ImGuiCol_ResizeGripHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.380f);
+  colors[ImGuiCol_ResizeGripActive] = ImVec4(0.784f, 0.949f, 0.420f, 0.620f);
+  colors[ImGuiCol_Tab] = ImVec4(0.063f, 0.094f, 0.110f, 1.0f);
+  colors[ImGuiCol_TabHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.280f);
+  colors[ImGuiCol_TabActive] = ImVec4(0.102f, 0.149f, 0.169f, 1.0f);
+  colors[ImGuiCol_TextSelectedBg] = ImVec4(0.294f, 0.824f, 0.753f, 0.280f);
+  colors[ImGuiCol_DragDropTarget] = ImVec4(0.784f, 0.949f, 0.420f, 0.850f);
+  colors[ImGuiCol_NavHighlight] = ImVec4(0.294f, 0.824f, 0.753f, 0.760f);
+
+  ImPlotStyle &plot_style = ImPlot::GetStyle();
+  plot_style.PlotBorderSize = 1.0f;
+  plot_style.MinorAlpha = 0.22f;
+  plot_style.MajorGridSize = ImVec2(1.0f, 1.0f);
+  plot_style.MinorGridSize = ImVec2(1.0f, 1.0f);
+  plot_style.PlotPadding = ImVec2(12.0f, 12.0f);
+  plot_style.LabelPadding = ImVec2(7.0f, 7.0f);
+  plot_style.LegendPadding = ImVec2(12.0f, 12.0f);
+  plot_style.LegendInnerPadding = ImVec2(8.0f, 6.0f);
+  plot_style.MousePosPadding = ImVec2(12.0f, 12.0f);
+  plot_style.AnnotationPadding = ImVec2(5.0f, 4.0f);
+  plot_style.FitPadding = ImVec2(0.04f, 0.07f);
+  plot_style.Colors[ImPlotCol_FrameBg] = ImVec4(0.033f, 0.051f, 0.063f, 1.0f);
+  plot_style.Colors[ImPlotCol_PlotBg] = ImVec4(0.027f, 0.043f, 0.051f, 1.0f);
+  plot_style.Colors[ImPlotCol_PlotBorder] = ImVec4(0.294f, 0.824f, 0.753f, 0.260f);
+  plot_style.Colors[ImPlotCol_LegendBg] = ImVec4(0.039f, 0.059f, 0.071f, 0.900f);
+  plot_style.Colors[ImPlotCol_LegendBorder] = ImVec4(0.294f, 0.824f, 0.753f, 0.260f);
+  plot_style.Colors[ImPlotCol_LegendText] = ImVec4(0.965f, 0.941f, 0.875f, 1.0f);
+  plot_style.Colors[ImPlotCol_TitleText] = ImVec4(0.965f, 0.941f, 0.875f, 1.0f);
+  plot_style.Colors[ImPlotCol_InlayText] = ImVec4(0.780f, 0.835f, 0.820f, 1.0f);
+  plot_style.Colors[ImPlotCol_AxisText] = ImVec4(0.745f, 0.800f, 0.800f, 1.0f);
+  plot_style.Colors[ImPlotCol_AxisGrid] = ImVec4(0.720f, 0.820f, 0.800f, 0.130f);
+  plot_style.Colors[ImPlotCol_AxisTick] = ImVec4(0.720f, 0.820f, 0.800f, 0.280f);
+  plot_style.Colors[ImPlotCol_AxisBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
+  plot_style.Colors[ImPlotCol_AxisBgHovered] = ImVec4(0.294f, 0.824f, 0.753f, 0.110f);
+  plot_style.Colors[ImPlotCol_AxisBgActive] = ImVec4(0.294f, 0.824f, 0.753f, 0.180f);
+  plot_style.Colors[ImPlotCol_Selection] = ImVec4(0.784f, 0.949f, 0.420f, 0.420f);
+  plot_style.Colors[ImPlotCol_Crosshairs] = ImVec4(0.945f, 0.702f, 0.435f, 0.700f);
 }
 
 std::vector<std::string> split_labels(const char *text, char delim) {
@@ -562,7 +653,7 @@ bool ImPlotLayer::initialize(const char *canvas_selector) noexcept {
     return false;
   }
 
-  ImGui::StyleColorsLight();
+  apply_nbimplot_theme();
   state.initialized = true;
   return true;
 #else
@@ -2794,7 +2885,7 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
       1.0f, std::round(static_cast<float>(state->height) * state->dpr)));
   glViewport(0, 0, fb_w, fb_h);
   glDisable(GL_SCISSOR_TEST);
-  glClearColor(1.0f, 1.0f, 1.0f, 1.0f);
+  glClearColor(0.027f, 0.043f, 0.051f, 1.0f);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
