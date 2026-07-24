@@ -1,7 +1,7 @@
 {
   "name": "@nbimplot/web",
-  "version": "0.1.9",
-  "description": "Standalone ImPlot + WASM plotting for browser web apps.",
+  "version": "0.1.10",
+  "description": "Standalone ImPlot + WASM plotting for fast interactive browser visualizations.",
   "type": "module",
   "module": "./src/index.js",
   "main": "./src/index.js",
@@ -19,11 +19,21 @@
     "implot",
     "imgui",
     "wasm",
+    "webassembly",
     "webgl",
+    "webgl2",
     "plotting",
-    "visualization"
+    "visualization",
+    "large-data",
+    "million-points",
+    "timeseries",
+    "time-series",
+    "scientific-visualization",
+    "typed-arrays",
+    "jupyter",
+    "notebook"
   ],
-  "homepage": "https://github.com/Prinkesh/nbimplot",
+  "homepage": "https://prinkesh.github.io/nbimplot/",
   "repository": {
     "type": "git",
     "url": "git+ssh://git@github.com/Prinkesh/nbimplot.git",

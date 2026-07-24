@@ -1,0 +1,67 @@
+# nbimplot
+
+> ImPlot-powered WASM plotting for Jupyter notebooks and browser web apps, engineered for interactive million-point time-series visualization.
+
+nbimplot is a strict WASM + ImGui + ImPlot plotting toolkit. It renders inside notebook output cells or normal browser DOM containers, moves numeric data through binary buffers, and uses screen-resolution min/max LOD so large line plots remain interactive.
+
+Primary use cases:
+- Fast plotting in Jupyter notebooks without native windows or side processes.
+- Interactive million-point and multi-million-point line charts.
+- Browser/webapp plotting with the same WASM core through `@nbimplot/web`.
+- Scientific and engineering dashboards using ImPlot interactions, subplots, heatmaps, images, annotations, drag primitives, and streaming updates.
+
+Install:
+```bash
+python -m pip install -U nbimplot
+npm install @nbimplot/web
+```
+
+Notebook example:
+```python
+import numpy as np
+import nbimplot as ip
+
+x = np.linspace(0, 100, 1_000_000, dtype=np.float32)
+y = np.sin(x)
+
+p = ip.Plot(width=900, height=450, title="Signal")
+h = p.line("mid", y, x=x)
+p.show()
+
+h.set_data((0.8 * y).astype(np.float32), x=x)
+p.render()
+```
+
+Web example:
+```js
+import { createPlot } from "@nbimplot/web";
+
+const plot = await createPlot("#plot", { width: 900, height: 450, title: "Signal" });
+const x = new Float32Array(1_000_000);
+const y = new Float32Array(x.length);
+for (let i = 0; i < y.length; i += 1) {
+  x[i] = i * 0.001;
+  y[i] = Math.sin(x[i]);
+}
+const h = plot.line("mid", y, { x });
+plot.render();
+```
+
+Important constraints:
+- Requires WebGL2.
+- Strict WASM/ImPlot runtime, no JavaScript renderer fallback.
+- Line x-data must be finite, equal length with y, and sorted non-decreasing for LOD.
+- Streaming append uses implicit sample indices; custom x streaming should use set_data/setData.
+
+Key links:
+- Homepage and demo: https://prinkesh.github.io/nbimplot/
+- GitHub: https://github.com/Prinkesh/nbimplot
+- PyPI: https://pypi.org/project/nbimplot/
+- npm: https://www.npmjs.com/package/@nbimplot/web
+- Full LLM documentation: https://prinkesh.github.io/nbimplot/llms-full.txt
+- Notebook examples: https://github.com/Prinkesh/nbimplot/tree/main/notebooks
+- Web docs: https://github.com/Prinkesh/nbimplot/blob/main/docs/WEB.md
+- Examples cookbook: https://github.com/Prinkesh/nbimplot/blob/main/docs/EXAMPLES.md
+- Fast Jupyter plotting guide: https://github.com/Prinkesh/nbimplot/blob/main/docs/FAST_JUPYTER_PLOTTING.md
+- Million-point plotting guide: https://github.com/Prinkesh/nbimplot/blob/main/docs/MILLION_POINT_NOTEBOOK_PLOTTING.md
+- Webapp integration guide: https://github.com/Prinkesh/nbimplot/blob/main/docs/WEBAPP_INTEGRATION.md

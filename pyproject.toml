@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nbimplot"
-version = "0.1.9"
-description = "ImPlot-powered Jupyter plotting widget for interactive, million-point visualizations."
+version = "0.1.10"
+description = "ImPlot-powered WASM plotting for fast interactive Jupyter and web visualizations."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -16,7 +16,7 @@ dependencies = [
   "numpy>=1.24",
   "traitlets>=5.14",
 ]
-keywords = ["jupyter", "plotting", "implot", "widgets", "visualization"]
+keywords = ["jupyter", "plotting", "implot", "imgui", "wasm", "webgl", "webgl2", "widgets", "visualization", "large-data", "time-series", "notebooks", "scientific-visualization"]
 classifiers = [
   "Framework :: Jupyter",
   "License :: OSI Approved :: MIT License",
@@ -25,9 +25,16 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Prinkesh/nbimplot"
+Homepage = "https://prinkesh.github.io/nbimplot/"
+Documentation = "https://github.com/Prinkesh/nbimplot#readme"
 Repository = "https://github.com/Prinkesh/nbimplot"
 Issues = "https://github.com/Prinkesh/nbimplot/issues"
+Changelog = "https://github.com/Prinkesh/nbimplot/releases"
+Demo = "https://prinkesh.github.io/nbimplot/"
+"Source Code" = "https://github.com/Prinkesh/nbimplot"
+"Notebook Examples" = "https://github.com/Prinkesh/nbimplot/tree/main/notebooks"
+"Web Package" = "https://www.npmjs.com/package/@nbimplot/web"
+"LLM Documentation" = "https://prinkesh.github.io/nbimplot/llms-full.txt"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

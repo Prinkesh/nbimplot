@@ -2,6 +2,11 @@
 
 Jupyter-native, ImPlot-powered plotting for very large arrays.
 
+[![PyPI](https://img.shields.io/pypi/v/nbimplot.svg)](https://pypi.org/project/nbimplot/)
+[![npm](https://img.shields.io/npm/v/@nbimplot/web.svg)](https://www.npmjs.com/package/@nbimplot/web)
+[![GitHub](https://img.shields.io/badge/source-GitHub-111827.svg)](https://github.com/Prinkesh/nbimplot)
+[![Demo](https://img.shields.io/badge/demo-live-0f766e.svg)](https://prinkesh.github.io/nbimplot/)
+
 `nbimplot` is built around three constraints:
 
 - notebook cell rendering only (no native windows, no side process)
@@ -21,6 +26,11 @@ hardened with tests, packaging checks, and runtime validation.
 Public web demo:
 
 - https://prinkesh.github.io/nbimplot/
+
+AI/agent-readable docs:
+
+- https://prinkesh.github.io/nbimplot/llms.txt
+- https://prinkesh.github.io/nbimplot/llms-full.txt
 
 ## Upstream Libraries
 
@@ -43,7 +53,7 @@ python -m pip install -U nbimplot
 Minimum recommended widget/runtime stack:
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.9" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.10" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 ```
 
 ## Compatibility
@@ -301,6 +311,13 @@ Implemented plot/primitive APIs include:
 
 For a broader cookbook, see `docs/EXAMPLES.md`.
 
+Search-focused guides:
+
+- `docs/FAST_JUPYTER_PLOTTING.md`
+- `docs/MILLION_POINT_NOTEBOOK_PLOTTING.md`
+- `docs/WEBAPP_INTEGRATION.md`
+- `docs/POSITIONING.md`
+
 ## View, Axes, and Performance Controls
 
 - `p.set_view(x_min, x_max, y_min, y_max)`
@@ -335,7 +352,7 @@ Open the Colab notebook directly:
 This is usually a server-kernel env mismatch or stale lab assets.
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.9" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.10" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 jupyter lab clean
 ```
 

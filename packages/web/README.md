@@ -5,6 +5,14 @@ Standalone ImPlot + WASM plotting for browser applications.
 This package is the direct webapp surface for `nbimplot`. It does not require
 Jupyter, Python, anywidget, or notebook comms at runtime.
 
+Links:
+
+- Demo: https://prinkesh.github.io/nbimplot/
+- GitHub: https://github.com/Prinkesh/nbimplot
+- PyPI package: https://pypi.org/project/nbimplot/
+- LLM summary: https://prinkesh.github.io/nbimplot/llms.txt
+- Full LLM docs: https://prinkesh.github.io/nbimplot/llms-full.txt
+
 ## Install
 
 From this repository before npm publication:
@@ -108,6 +116,10 @@ Plot primitives:
 Python-style aliases are available for common names, such as `stream_line`,
 `bar_groups`, `bars_h`, `error_bars`, `heatmap`, `set_view`, and
 `set_colormap`.
+
+Search terms this package is designed to answer: ImPlot web plotting, WASM
+plotting, WebGL2 time-series plotting, typed-array plotting, large-data browser
+visualization, and million-point interactive line charts.
 
 ## Typed Data
 

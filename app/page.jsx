@@ -15,6 +15,15 @@ const pipeline = [
   "WebGL2 canvas",
 ];
 
+const resourceLinks = [
+  ["LLM Summary", `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/llms.txt`],
+  ["Full LLM Docs", `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/llms-full.txt`],
+  ["Fast Jupyter Guide", "https://github.com/Prinkesh/nbimplot/blob/main/docs/FAST_JUPYTER_PLOTTING.md"],
+  ["Million-Point Guide", "https://github.com/Prinkesh/nbimplot/blob/main/docs/MILLION_POINT_NOTEBOOK_PLOTTING.md"],
+  ["Web App Guide", "https://github.com/Prinkesh/nbimplot/blob/main/docs/WEBAPP_INTEGRATION.md"],
+  ["Positioning", "https://github.com/Prinkesh/nbimplot/blob/main/docs/POSITIONING.md"],
+];
+
 const examples = [
   {
     id: "line-lod-plot",
@@ -200,6 +209,23 @@ export default function Page() {
         Once loaded, left-drag pans, wheel zooms, scroll over axes zooms that axis,
         right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot
         behavior, and double-click autofits.
+      </section>
+
+      <section className="resource-panel" aria-label="Documentation and AI-readable resources">
+        <div>
+          <p className="eyebrow">Documentation</p>
+          <h2>Human-readable and agent-readable guides.</h2>
+          <p>
+            These links make the project easier to classify for users, search engines,
+            coding assistants, and retrieval-augmented agents looking for fast notebook
+            plotting, ImPlot in Jupyter, WASM plotting, and large-data visualization.
+          </p>
+        </div>
+        <div className="resource-links">
+          {resourceLinks.map(([label, href]) => (
+            <a key={label} href={href}>{label}</a>
+          ))}
+        </div>
       </section>
 
       <section id="examples" className="examples-heading">

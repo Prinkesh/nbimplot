@@ -177,6 +177,7 @@ select {
 .control-panel,
 .metrics div,
 .notes-panel,
+.resource-panel,
 .examples-heading,
 .example-card {
   border: 1px solid var(--line);
@@ -442,6 +443,7 @@ h2 {
 }
 
 .notes-panel,
+.resource-panel,
 .examples-heading {
   animation: rise-in 620ms 280ms ease both;
   background: linear-gradient(135deg, rgb(75 210 192 / 0.10), rgb(217 121 69 / 0.08));
@@ -463,6 +465,46 @@ h2 {
 .examples-heading p {
   margin: 0;
   max-width: 780px;
+}
+
+.resource-panel {
+  align-items: end;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.42fr);
+}
+
+.resource-panel h2 {
+  margin-bottom: 10px;
+}
+
+.resource-panel p {
+  color: var(--muted);
+  line-height: 1.65;
+  margin: 0;
+  max-width: 780px;
+}
+
+.resource-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.resource-links a {
+  background: rgb(246 240 223 / 0.08);
+  border: 1px solid rgb(246 240 223 / 0.14);
+  border-radius: 999px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 800;
+  padding: 9px 12px;
+}
+
+.resource-links a:hover {
+  background: rgb(75 210 192 / 0.16);
+  border-color: rgb(75 210 192 / 0.32);
 }
 
 .examples-grid {
@@ -736,10 +778,19 @@ code {
   .hero-panel,
   .control-panel,
   .notes-panel,
+  .resource-panel,
   .examples-heading,
   .example-card {
     border-radius: 22px;
     padding: 16px;
+  }
+
+  .resource-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .resource-links {
+    justify-content: flex-start;
   }
 
   h1 {
