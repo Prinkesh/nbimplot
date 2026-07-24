@@ -42,12 +42,15 @@ npm install @nbimplot/web
     title: "Million Point Signal",
   });
 
-  const y = new Float32Array(1_000_000);
+  const x = new Float32Array(1_000_000);
+  const y = new Float32Array(x.length);
   for (let i = 0; i < y.length; i += 1) {
-    y[i] = Math.sin(i * 0.001) + 0.1 * Math.sin(i * 0.021);
+    x[i] = i * 0.001;
+    y[i] = Math.sin(x[i]) + 0.1 * Math.sin(i * 0.021);
   }
 
   plot.line("signal", y, {
+    x,
     color: "#2563eb",
     lineWeight: 2,
   });
@@ -74,7 +77,9 @@ async function mount(element) {
     title: "Signal",
   });
 
-  plot.line("y", new Float32Array([0, 1, 0, -1, 0]));
+  const x = new Float32Array([0, 0.5, 1.4, 3.0, 4.2]);
+  const y = new Float32Array([0, 1, 0, -1, 0]);
+  plot.line("y", y, { x });
 }
 
 function unmount() {
@@ -91,9 +96,17 @@ const y = new Float32Array(10_000_000);
 plot.line("large", y);
 ```
 
-`line` uses implicit X values (`0..N-1`). Primitives such as `scatter`,
-`stairs`, `stems`, `bars`, `shaded`, and `errorBars` accept explicit `x`
-arrays.
+`line` uses implicit X values (`0..N-1`) by default. Pass `{ x }` for explicit
+line coordinates:
+
+```js
+const h = plot.line("large", y, { x });
+h.setData(yNew, { x: xNew });
+```
+
+Line `x` buffers must be finite, same length as `y`, and sorted in
+non-decreasing order. `xAxis` chooses the ImPlot axis slot (`x1`, `x2`, `x3`);
+it is separate from the x-data buffer.
 
 ## Heatmaps and Images
 

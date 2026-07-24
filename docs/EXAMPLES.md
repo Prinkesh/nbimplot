@@ -19,12 +19,15 @@ t = np.linspace(0, 100, 1_000_000, dtype=np.float32)
 y = np.sin(t)
 
 p = ip.Plot(width=1000, height=420, title="Line + Update")
-h = p.line("signal", y, color="#3b82f6", line_weight=2.0)
+h = p.line("signal", y, x=t, color="#3b82f6", line_weight=2.0)
 p.show()
 
-h.set_data((0.7 * y).astype(np.float32))
+h.set_data((0.7 * y).astype(np.float32), x=t)
 p.render()
 ```
+
+`line(..., x=x)` requires finite, sorted, equal-length `x` and `y` arrays.
+`x_axis="x2"` selects an ImPlot axis slot; it does not provide x data.
 
 ## Streaming Ring Buffer
 

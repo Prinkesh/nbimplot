@@ -77,9 +77,11 @@
       import { createPlot } from "../../src/index.js";
 
       const n = 1_000_000;
+      const x = new Float32Array(n);
       const y = new Float32Array(n);
       for (let i = 0; i < n; i += 1) {
-        y[i] = Math.sin(i * 0.001) + 0.18 * Math.sin(i * 0.017);
+        x[i] = i * 0.001;
+        y[i] = Math.sin(x[i]) + 0.18 * Math.sin(i * 0.017);
       }
 
       const linePlot = await createPlot("#line", {
@@ -90,6 +92,7 @@
         crosshairs: true,
       });
       const line = linePlot.line("signal", y, {
+        x,
         color: "#2563eb",
         lineWeight: 2,
       });

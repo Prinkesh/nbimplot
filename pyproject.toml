@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nbimplot"
-version = "0.1.8"
+version = "0.1.9"
 description = "ImPlot-powered Jupyter plotting widget for interactive, million-point visualizations."
 readme = "README.md"
 requires-python = ">=3.10"

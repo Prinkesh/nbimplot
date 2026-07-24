@@ -30,19 +30,22 @@ const plot = await createPlot("#plot", {
   title: "Signal",
 });
 
-const y = new Float32Array(1_000_000);
+const x = new Float32Array(1_000_000);
+const y = new Float32Array(x.length);
 for (let i = 0; i < y.length; i += 1) {
-  y[i] = Math.sin(i * 0.001);
+  x[i] = i * 0.001;
+  y[i] = Math.sin(x[i]);
 }
 
 const h = plot.line("mid", y, {
+  x,
   color: "#2563eb",
   lineWeight: 2,
 });
 
 plot.render();
 
-h.setData(y);
+h.setData(y, { x });
 plot.dispose();
 ```
 
@@ -82,7 +85,7 @@ Core methods:
 - `createPlot(target, options)`
 - `plot.line(name, y, options)`
 - `plot.streamLine(name, { capacity, initial })`
-- `handle.setData(y)`
+- `handle.setData(y, { x })`
 - `handle.append(y)`
 - `plot.render()`
 - `plot.autoscale()`
@@ -114,6 +117,17 @@ Use `Float32Array` for the fastest path:
 const y = new Float32Array(10_000_000);
 plot.line("large", y);
 ```
+
+For explicit x coordinates:
+
+```js
+const h = plot.line("large", y, { x });
+h.setData(yNew, { x: xNew });
+```
+
+`x` must be finite, equal-length with `y`, and sorted in non-decreasing order
+so the WASM LOD engine can binary-search the visible range. If the line keeps
+the same length, `h.setData(yNew)` preserves the existing x buffer.
 
 For `heatmap`, pass a flat `Float32Array` plus shape:
 

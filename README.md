@@ -43,7 +43,7 @@ python -m pip install -U nbimplot
 Minimum recommended widget/runtime stack:
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.8" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.9" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 ```
 
 ## Compatibility
@@ -60,14 +60,15 @@ python -m pip install -U "nbimplot>=0.1.8" "anywidget>=0.9.21" ipywidgets jupyte
 import numpy as np
 import nbimplot as ip
 
-y = np.sin(np.linspace(0, 100, 1_000_000, dtype=np.float32))
+x = np.linspace(0, 100, 1_000_000, dtype=np.float32)
+y = np.sin(x)
 
 p = ip.Plot(width=900, height=450, title="Signal")
-h = p.line("mid", y)
+h = p.line("mid", y, x=x)
 p.show()
 
 # Update in place, then redraw
-h.set_data((0.8 * y).astype(np.float32))
+h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
 ```
 
@@ -95,15 +96,17 @@ const plot = await createPlot("#plot", {
   title: "Signal",
 });
 
-const y = new Float32Array(1_000_000);
+const x = new Float32Array(1_000_000);
+const y = new Float32Array(x.length);
 for (let i = 0; i < y.length; i += 1) {
-  y[i] = Math.sin(i * 0.001);
+  x[i] = i * 0.001;
+  y[i] = Math.sin(x[i]);
 }
 
-const h = plot.line("mid", y);
+const h = plot.line("mid", y, { x });
 plot.render();
 
-h.setData(y);
+h.setData(y, { x });
 plot.dispose();
 ```
 
@@ -145,18 +148,41 @@ GitHub Pages should be configured once as:
 import numpy as np
 import nbimplot as ip
 
-y = np.random.randn(200_000).astype(np.float32).cumsum()
+x = np.linspace(0, 10_000, 200_000, dtype=np.float32)
+y = np.random.randn(x.size).astype(np.float32).cumsum()
 
 p = ip.Plot(width=1000, height=420, title="Core API")
-h = p.line("price", y, color="#22c55e", line_weight=2.0, marker="none")
+h = p.line("price", y, x=x, color="#22c55e", line_weight=2.0, marker="none")
 p.set_plot_flags(no_legend=False, no_menus=False, no_box_select=False)
 p.set_colormap("Viridis")
 p.show()
 
 # Later update
-h.set_data((y * 1.01).astype(np.float32))
+h.set_data((y * 1.01).astype(np.float32), x=x)
 p.render()
 ```
+
+## Explicit X Data
+
+Line plots accept explicit x coordinates on both public surfaces:
+
+```python
+h = p.line("signal", y, x=x)
+h.set_data(y_new, x=x_new)
+```
+
+```js
+const h = plot.line("signal", y, { x });
+h.setData(yNew, { x: xNew });
+```
+
+Rules:
+
+- `x` and `y` must be 1D, finite, and equal length.
+- `x` must be sorted in non-decreasing order so the WASM LOD path can binary-search the visible range.
+- If a custom-x line keeps the same length, `h.set_data(y_new)` / `h.setData(yNew)` preserves the existing x buffer.
+- `x_axis` / `xAxis` selects the ImPlot axis slot (`x1`, `x2`, `x3`); it is not the x-data argument.
+- Streaming append uses implicit sample indices. For custom x streaming, update with `set_data(y, x=x)` / `setData(y, { x })`.
 
 ## Common Examples
 
@@ -309,7 +335,7 @@ Open the Colab notebook directly:
 This is usually a server-kernel env mismatch or stale lab assets.
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.8" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.9" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 jupyter lab clean
 ```
 

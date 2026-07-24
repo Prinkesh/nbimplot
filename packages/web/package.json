@@ -1,6 +1,6 @@
 {
   "name": "@nbimplot/web",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Standalone ImPlot + WASM plotting for browser web apps.",
   "type": "module",
   "module": "./src/index.js",

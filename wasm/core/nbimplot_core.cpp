@@ -45,6 +45,7 @@ struct Series {
   std::int32_t marker = -2;
   float marker_size = 4.0f;
   std::vector<float> raw;
+  std::vector<float> raw_x;
   bool visible = true;
   std::uint64_t version = 0;
 
@@ -52,6 +53,8 @@ struct Series {
   std::int32_t lod_end = -1;
   std::uint32_t lod_width = 0;
   std::uint64_t lod_version = 0;
+  double lod_x_min = 0.0;
+  double lod_x_max = 0.0;
   std::vector<float> lod_xy;
 
   std::uint64_t block_cache_version = 0;
@@ -212,9 +215,51 @@ void reset_lod_cache(Series &series) {
   series.lod_end = -1;
   series.lod_width = 0;
   series.lod_version = 0;
+  series.lod_x_min = 0.0;
+  series.lod_x_max = 0.0;
   series.lod_xy.clear();
   series.block_cache_version = 0;
   series.block_cache.clear();
+}
+
+bool has_custom_x(const Series &series) {
+  return series.raw_x.size() == series.raw.size() && !series.raw.empty();
+}
+
+bool is_valid_sorted_x(const float *x_data, std::uint32_t len) {
+  if (x_data == nullptr || len == 0U) {
+    return false;
+  }
+  float prev = x_data[0];
+  if (!std::isfinite(prev)) {
+    return false;
+  }
+  for (std::uint32_t i = 1; i < len; ++i) {
+    const float value = x_data[i];
+    if (!std::isfinite(value) || value < prev) {
+      return false;
+    }
+    prev = value;
+  }
+  return true;
+}
+
+std::int32_t lower_bound_x_index(const Series &series, double value) {
+  if (!has_custom_x(series)) {
+    return 0;
+  }
+  const auto it = std::lower_bound(series.raw_x.begin(), series.raw_x.end(),
+                                   static_cast<float>(value));
+  return static_cast<std::int32_t>(std::distance(series.raw_x.begin(), it));
+}
+
+std::int32_t upper_bound_x_index(const Series &series, double value) {
+  if (!has_custom_x(series)) {
+    return 0;
+  }
+  const auto it = std::upper_bound(series.raw_x.begin(), series.raw_x.end(),
+                                   static_cast<float>(value));
+  return static_cast<std::int32_t>(std::distance(series.raw_x.begin(), it));
 }
 
 void append_draw_point(std::vector<float> &draw_tuples, std::uint32_t slot,
@@ -387,6 +432,132 @@ void build_min_max_lod(Series &series, std::int32_t start, std::int32_t end,
   series.lod_version = series.version;
 }
 
+void build_min_max_lod_custom_x(Series &series, std::int32_t start,
+                                std::int32_t end, std::uint32_t pixel_width,
+                                double view_x_min, double view_x_max) {
+  if (!has_custom_x(series) || start < 0 || end < start || pixel_width == 0 ||
+      !std::isfinite(view_x_min) || !std::isfinite(view_x_max) ||
+      view_x_max <= view_x_min) {
+    series.lod_xy.clear();
+    series.lod_start = start;
+    series.lod_end = end;
+    series.lod_width = pixel_width;
+    series.lod_version = series.version;
+    series.lod_x_min = view_x_min;
+    series.lod_x_max = view_x_max;
+    return;
+  }
+
+  if (series.lod_version == series.version && series.lod_start == start &&
+      series.lod_end == end && series.lod_width == pixel_width &&
+      series.lod_x_min == view_x_min && series.lod_x_max == view_x_max) {
+    return;
+  }
+
+  ensure_lod_block_cache(series);
+
+  const std::int32_t block_size = static_cast<std::int32_t>(kLodBlockSize);
+  const float *raw_data = series.raw.data();
+  const float *raw_x = series.raw_x.data();
+  const double x_range = view_x_max - view_x_min;
+
+  series.lod_xy.clear();
+  series.lod_xy.reserve(static_cast<std::size_t>(pixel_width) * 4);
+
+  std::int32_t bucket_start = start;
+  for (std::uint32_t bucket = 0; bucket < pixel_width; ++bucket) {
+    const double bucket_x_end =
+        bucket + 1U == pixel_width
+            ? view_x_max
+            : view_x_min + (x_range * static_cast<double>(bucket + 1U)) /
+                               static_cast<double>(pixel_width);
+    std::int32_t bucket_end =
+        bucket + 1U == pixel_width ? end + 1 : upper_bound_x_index(series, bucket_x_end);
+    bucket_end = clamp_value<std::int32_t>(bucket_end, start, end + 1);
+    if (bucket_end <= bucket_start) {
+      continue;
+    }
+
+    float min_value = std::numeric_limits<float>::infinity();
+    float max_value = -std::numeric_limits<float>::infinity();
+    std::int32_t min_index = bucket_start;
+    std::int32_t max_index = bucket_start;
+
+    auto update_point = [&](std::int32_t idx, float value) {
+      if (!std::isfinite(value)) {
+        return;
+      }
+      if (value < min_value) {
+        min_value = value;
+        min_index = idx;
+      }
+      if (value > max_value) {
+        max_value = value;
+        max_index = idx;
+      }
+    };
+
+    std::int32_t i = bucket_start;
+    if (bucket_end - bucket_start >= block_size * 2 &&
+        !series.block_cache.empty()) {
+      const std::int32_t aligned_start =
+          ((bucket_start + block_size - 1) / block_size) * block_size;
+      const std::int32_t aligned_end = (bucket_end / block_size) * block_size;
+
+      for (; i < std::min(bucket_end, aligned_start); ++i) {
+        update_point(i, raw_data[static_cast<std::size_t>(i)]);
+      }
+
+      for (std::int32_t block_begin = aligned_start; block_begin < aligned_end;
+           block_begin += block_size) {
+        const std::size_t block_idx =
+            static_cast<std::size_t>(block_begin / block_size);
+        if (block_idx >= series.block_cache.size()) {
+          break;
+        }
+        const LodBlockSummary &summary = series.block_cache[block_idx];
+        if (!summary.has_finite) {
+          continue;
+        }
+        update_point(summary.min_index, summary.min_value);
+        update_point(summary.max_index, summary.max_value);
+      }
+      i = std::max(i, aligned_end);
+    }
+
+    for (; i < bucket_end; ++i) {
+      update_point(i, raw_data[static_cast<std::size_t>(i)]);
+    }
+
+    if (std::isfinite(min_value) && std::isfinite(max_value)) {
+      if (min_index <= max_index) {
+        series.lod_xy.push_back(raw_x[static_cast<std::size_t>(min_index)]);
+        series.lod_xy.push_back(min_value);
+        if (max_index != min_index) {
+          series.lod_xy.push_back(raw_x[static_cast<std::size_t>(max_index)]);
+          series.lod_xy.push_back(max_value);
+        }
+      } else {
+        series.lod_xy.push_back(raw_x[static_cast<std::size_t>(max_index)]);
+        series.lod_xy.push_back(max_value);
+        if (max_index != min_index) {
+          series.lod_xy.push_back(raw_x[static_cast<std::size_t>(min_index)]);
+          series.lod_xy.push_back(min_value);
+        }
+      }
+    }
+
+    bucket_start = bucket_end;
+  }
+
+  series.lod_start = start;
+  series.lod_end = end;
+  series.lod_width = pixel_width;
+  series.lod_version = series.version;
+  series.lod_x_min = view_x_min;
+  series.lod_x_max = view_x_max;
+}
+
 void autoscale(PlotCore &plot) {
   float x_min = std::numeric_limits<float>::infinity();
   float x_max = -std::numeric_limits<float>::infinity();
@@ -403,15 +574,18 @@ void autoscale(PlotCore &plot) {
     if (!series.visible || series.raw.empty()) {
       continue;
     }
-    has_any = true;
-    x_min = std::min(x_min, 0.0f);
-    x_max = std::max(x_max, static_cast<float>(series.raw.size() - 1));
-    for (float value : series.raw) {
-      if (!std::isfinite(value)) {
+    const bool custom_x = has_custom_x(series);
+    for (std::size_t i = 0; i < series.raw.size(); ++i) {
+      const float x = custom_x ? series.raw_x[i] : static_cast<float>(i);
+      const float y = series.raw[i];
+      if (!std::isfinite(x) || !std::isfinite(y)) {
         continue;
       }
-      y_min = std::min(y_min, value);
-      y_max = std::max(y_max, value);
+      has_any = true;
+      x_min = std::min(x_min, x);
+      x_max = std::max(x_max, x);
+      y_min = std::min(y_min, y);
+      y_max = std::max(y_max, y);
     }
   }
 
@@ -762,6 +936,7 @@ std::int32_t nbp_line_set_data(std::uint32_t handle, std::uint32_t series_id,
     series.name = "series_" + std::to_string(series.slot);
     series.visible = true;
     series.raw.assign(data, data + len);
+    series.raw_x.clear();
     series.version = 1;
     reset_lod_cache(series);
     plot->order.push_back(series_id);
@@ -771,6 +946,46 @@ std::int32_t nbp_line_set_data(std::uint32_t handle, std::uint32_t series_id,
 
   Series &series = it->second;
   series.raw.assign(data, data + len);
+  series.raw_x.clear();
+  series.version += 1;
+  reset_lod_cache(series);
+  return 0;
+}
+
+std::int32_t nbp_line_set_data_xy(std::uint32_t handle, std::uint32_t series_id,
+                                  const float *x_data, const float *y_data,
+                                  std::uint32_t len,
+                                  std::int32_t is_new_series) {
+  PlotCore *plot = get_plot(handle);
+  if (plot == nullptr || x_data == nullptr || y_data == nullptr || len == 0U) {
+    return -1;
+  }
+  if (!is_valid_sorted_x(x_data, len)) {
+    return -2;
+  }
+
+  auto it = plot->series_by_id.find(series_id);
+  if (it == plot->series_by_id.end()) {
+    if (!is_new_series) {
+      // Same retry-resilience behavior as nbp_line_set_data.
+    }
+    Series series;
+    series.id = series_id;
+    series.slot = static_cast<std::uint32_t>(plot->order.size());
+    series.name = "series_" + std::to_string(series.slot);
+    series.visible = true;
+    series.raw.assign(y_data, y_data + len);
+    series.raw_x.assign(x_data, x_data + len);
+    series.version = 1;
+    reset_lod_cache(series);
+    plot->order.push_back(series_id);
+    plot->series_by_id.emplace(series_id, std::move(series));
+    return 0;
+  }
+
+  Series &series = it->second;
+  series.raw.assign(y_data, y_data + len);
+  series.raw_x.assign(x_data, x_data + len);
   series.version += 1;
   reset_lod_cache(series);
   return 0;
@@ -791,6 +1006,9 @@ std::int32_t nbp_line_append_data(std::uint32_t handle, std::uint32_t series_id,
     return 0;
   }
   Series &series = it->second;
+  if (has_custom_x(series)) {
+    return -2;
+  }
   const std::size_t old_size = series.raw.size();
   series.raw.resize(old_size + static_cast<std::size_t>(len));
   std::copy(data, data + len, series.raw.begin() + static_cast<std::ptrdiff_t>(old_size));
@@ -1298,11 +1516,28 @@ std::uint32_t nbp_build_draw_data(std::uint32_t handle, std::uint32_t pixel_widt
         (series.name.empty() ? "series" : series.name.c_str());
     plot->series_views.push_back(series_view);
 
+    const bool custom_x = has_custom_x(series);
     const std::int32_t max_idx = static_cast<std::int32_t>(series.raw.size() - 1);
-    const std::int32_t start = clamp_value(
-        static_cast<std::int32_t>(std::floor(plot->x_min)), 0, max_idx);
-    const std::int32_t end =
-        clamp_value(static_cast<std::int32_t>(std::ceil(plot->x_max)), 0, max_idx);
+    std::int32_t start = 0;
+    std::int32_t end = max_idx;
+    if (custom_x) {
+      const std::int32_t start_candidate =
+          lower_bound_x_index(series, static_cast<double>(plot->x_min));
+      const std::int32_t end_candidate =
+          upper_bound_x_index(series, static_cast<double>(plot->x_max)) - 1;
+      if (start_candidate > max_idx || end_candidate < 0 ||
+          end_candidate < start_candidate) {
+        continue;
+      }
+      start = start_candidate;
+      end = end_candidate;
+      start = clamp_value<std::int32_t>(start, 0, max_idx);
+      end = clamp_value<std::int32_t>(end, 0, max_idx);
+    } else {
+      start = clamp_value(
+          static_cast<std::int32_t>(std::floor(plot->x_min)), 0, max_idx);
+      end = clamp_value(static_cast<std::int32_t>(std::ceil(plot->x_max)), 0, max_idx);
+    }
     if (end < start) {
       continue;
     }
@@ -1325,16 +1560,17 @@ std::uint32_t nbp_build_draw_data(std::uint32_t handle, std::uint32_t pixel_widt
         seg_count = 0;
       };
       for (std::int32_t i = start; i <= end; ++i) {
+        const float x = custom_x ? series.raw_x[static_cast<std::size_t>(i)]
+                                 : static_cast<float>(i);
         const float y = series.raw[static_cast<std::size_t>(i)];
-        if (!std::isfinite(y)) {
+        if (!std::isfinite(x) || !std::isfinite(y)) {
           pen_down = false;
           flush_segment();
           continue;
         }
         const std::uint32_t tuple_idx =
             static_cast<std::uint32_t>(plot->draw_tuples.size() / 4U);
-        append_draw_point(plot->draw_tuples, series.slot, static_cast<float>(i), y,
-                          pen_down);
+        append_draw_point(plot->draw_tuples, series.slot, x, y, pen_down);
         if (!pen_down) {
           flush_segment();
           seg_start = static_cast<std::int32_t>(tuple_idx);
@@ -1353,7 +1589,13 @@ std::uint32_t nbp_build_draw_data(std::uint32_t handle, std::uint32_t pixel_widt
     }
 
     const auto lod_start = Clock::now();
-    build_min_max_lod(series, start, end, lod_width);
+    if (custom_x) {
+      build_min_max_lod_custom_x(series, start, end, lod_width,
+                                 static_cast<double>(plot->x_min),
+                                 static_cast<double>(plot->x_max));
+    } else {
+      build_min_max_lod(series, start, end, lod_width);
+    }
     lod_ms += duration_to_ms(Clock::now() - lod_start);
 
     const auto segment_start = Clock::now();

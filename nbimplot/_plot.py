@@ -78,6 +78,7 @@ class _SeriesMeta:
     length: int
     dtype: str
     data: np.ndarray
+    x_data: np.ndarray | None = None
     subplot_index: int = 0
     x_axis: int = 0
     y_axis: int = 3
@@ -242,6 +243,17 @@ def _normalize_marker_size(value: float) -> float:
     return out
 
 
+def _to_line_x(data: Any, *, y_len: int) -> np.ndarray:
+    out = _to_float32_1d(data, arg_name="x")
+    if int(out.size) != int(y_len):
+        raise ValueError("x and y must have the same length.")
+    if not np.isfinite(out).all():
+        raise ValueError("x must contain only finite values.")
+    if out.size > 1 and np.any(np.diff(out) < 0):
+        raise ValueError("x must be sorted in non-decreasing order for line LOD.")
+    return out
+
+
 class LineHandle:
     """Mutable reference to an existing line series."""
 
@@ -266,8 +278,8 @@ class LineHandle:
     def name(self) -> str:
         return self._name
 
-    def set_data(self, y: Any) -> None:
-        self._plot._set_series_data(self._series_id, y)
+    def set_data(self, y: Any, *, x: Any | None = None) -> None:
+        self._plot._set_series_data(self._series_id, y, x=x)
 
     def append(self, y: Any, *, max_points: int | None = None) -> None:
         cap = self._stream_capacity if max_points is None else max_points
@@ -393,6 +405,7 @@ class Plot(anywidget.AnyWidget):
         name: str,
         y: Any,
         *,
+        x: Any | None = None,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
@@ -409,6 +422,7 @@ class Plot(anywidget.AnyWidget):
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
 
         data = _to_float32_1d(y, arg_name="y")
+        x_data = _to_line_x(x, y_len=int(data.size)) if x is not None else None
         capacity: int | None = None
         if max_points is not None:
             capacity_i = int(max_points)
@@ -417,6 +431,8 @@ class Plot(anywidget.AnyWidget):
             capacity = capacity_i
             if data.size > capacity_i:
                 data = data[-capacity_i:].copy()
+                if x_data is not None:
+                    x_data = x_data[-capacity_i:].copy()
         hidden = bool(self._consume_hide_next_item())
         color_rgba = _normalize_rgba(color)
         line_weight_v = _normalize_line_weight(line_weight)
@@ -428,6 +444,7 @@ class Plot(anywidget.AnyWidget):
             length=int(data.size),
             dtype="float32",
             data=data,
+            x_data=x_data,
             subplot_index=subplot_idx,
             x_axis=int(x_axis_code),
             y_axis=int(y_axis_code),
@@ -451,6 +468,7 @@ class Plot(anywidget.AnyWidget):
                 "y_axis": int(y_axis_code),
                 "dtype": "float32",
                 "length": int(data.size),
+                "has_x": bool(x_data is not None),
                 "has_color": bool(color_rgba is not None),
                 "color_r": float(color_r),
                 "color_g": float(color_g),
@@ -462,7 +480,7 @@ class Plot(anywidget.AnyWidget):
                 "hidden": bool(hidden),
                 "max_points": 0 if capacity is None else int(capacity),
             },
-            buffers=[memoryview(data)],
+            buffers=[memoryview(x_data), memoryview(data)] if x_data is not None else [memoryview(data)],
         )
         return LineHandle(
             self,
@@ -1867,20 +1885,35 @@ class Plot(anywidget.AnyWidget):
             self._closed = True
         super().close()
 
-    def _set_series_data(self, series_id: str, y: Any) -> None:
+    def _set_series_data(self, series_id: str, y: Any, *, x: Any | None = None) -> None:
         self._ensure_open()
         meta = self._series.get(series_id)
         if meta is None:
             raise KeyError(f"Unknown series_id: {series_id}")
 
         data = _to_float32_1d(y, arg_name="y")
+        if x is not None:
+            x_data = _to_line_x(x, y_len=int(data.size))
+        elif meta.x_data is not None:
+            if int(data.size) != int(meta.x_data.size):
+                raise ValueError("x must be provided when resizing a custom-x line.")
+            x_data = meta.x_data
+        else:
+            x_data = None
         if meta.stream_capacity is not None and data.size > int(meta.stream_capacity):
             data = data[-int(meta.stream_capacity) :].copy()
-        reuse_allocation = data.size == meta.length and meta.dtype == "float32"
+            if x_data is not None:
+                x_data = x_data[-int(meta.stream_capacity) :].copy()
+        reuse_allocation = (
+            data.size == meta.length
+            and meta.dtype == "float32"
+            and ((meta.x_data is None and x_data is None) or (meta.x_data is not None and x_data is not None))
+        )
 
         meta.length = int(data.size)
         meta.dtype = "float32"
         meta.data = data
+        meta.x_data = x_data
 
         self.send(
             {
@@ -1888,9 +1921,10 @@ class Plot(anywidget.AnyWidget):
                 "series_id": series_id,
                 "dtype": "float32",
                 "length": int(data.size),
+                "has_x": bool(x_data is not None),
                 "reuse_allocation": reuse_allocation,
             },
-            buffers=[memoryview(data)],
+            buffers=[memoryview(x_data), memoryview(data)] if x_data is not None else [memoryview(data)],
         )
 
     def _append_series_data(self, series_id: str, y: Any, *, max_points: int | None = None) -> None:
@@ -1898,6 +1932,8 @@ class Plot(anywidget.AnyWidget):
         meta = self._series.get(series_id)
         if meta is None:
             raise KeyError(f"Unknown series_id: {series_id}")
+        if meta.x_data is not None:
+            raise ValueError("append is not supported for custom-x line series; use set_data(y, x=x).")
         append_data = _to_float32_1d(y, arg_name="y")
         if max_points is None:
             cap = meta.stream_capacity
@@ -2229,11 +2265,14 @@ class Plot(anywidget.AnyWidget):
                     "y_axis": int(meta.y_axis),
                     "dtype": meta.dtype,
                     "length": meta.length,
+                    "has_x": bool(meta.x_data is not None),
                     "hidden": bool(meta.hidden),
                     "max_points": 0 if meta.stream_capacity is None else int(meta.stream_capacity),
                     **self._series_style_payload(meta),
                 },
-                buffers=[memoryview(meta.data)],
+                buffers=[memoryview(meta.x_data), memoryview(meta.data)]
+                if meta.x_data is not None
+                else [memoryview(meta.data)],
             )
         for meta in self._primitives.values():
             self.send(

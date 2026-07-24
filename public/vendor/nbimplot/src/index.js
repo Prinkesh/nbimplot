@@ -140,6 +140,25 @@ function ensureVector(value, name = "data") {
   return out;
 }
 
+function ensureLineX(value, yLength) {
+  const out = ensureVector(value, "x");
+  if (out.length !== yLength) {
+    throw new Error("x and y must have the same length.");
+  }
+  let previous = out[0];
+  if (!Number.isFinite(previous)) {
+    throw new Error("x must contain only finite values.");
+  }
+  for (let i = 1; i < out.length; i += 1) {
+    const current = out[i];
+    if (!Number.isFinite(current) || current < previous) {
+      throw new Error("x must be sorted in non-decreasing order for line LOD.");
+    }
+    previous = current;
+  }
+  return out;
+}
+
 function normalizeMatrix(value, options = {}, name = "data") {
   if (Array.isArray(value) && Array.isArray(value[0])) {
     const rows = value.length;
@@ -467,6 +486,30 @@ class WasmCoreSession {
     return rc === 0;
   }
 
+  upsertLineXY(token, xData, yData, isNewSeries) {
+    if (typeof this.module._nbp_line_set_data_xy !== "function") return false;
+    const xView = ensureVector(xData, "x");
+    const yView = ensureVector(yData, "y");
+    if (xView.length !== yView.length) return false;
+    const bytes = yView.byteLength;
+    const ptr = this.module._malloc(bytes * 2);
+    if (ptr === 0) return false;
+    const xPtr = ptr;
+    const yPtr = ptr + bytes;
+    this.module.HEAPF32.set(xView, xPtr >>> 2);
+    this.module.HEAPF32.set(yView, yPtr >>> 2);
+    const rc = this.module._nbp_line_set_data_xy(
+      this.handle,
+      token >>> 0,
+      xPtr,
+      yPtr,
+      yView.length >>> 0,
+      isNewSeries ? 1 : 0,
+    );
+    this.module._free(ptr);
+    return rc === 0;
+  }
+
   appendLineData(token, data, maxPoints) {
     const view = ensureVector(data, "append data");
     const ptr = this.module._malloc(view.byteLength);
@@ -749,19 +792,41 @@ class LineHandle {
     this.plot = plot;
     this.token = token >>> 0;
     this.capacity = Math.max(0, Number(options.capacity || 0) | 0);
+    this.xData = options.xData || null;
   }
 
-  setData(y) {
+  setData(y, options = {}) {
     this.plot._assertReady();
-    if (!this.plot.wasm.upsertLine(this.token, ensureVector(y, "y"), false)) {
+    const data = ensureVector(y, "y");
+    let xData = null;
+    if (options.x != null) {
+      xData = ensureLineX(options.x, data.length);
+    } else if (this.xData) {
+      if (data.length !== this.xData.length) {
+        throw new Error("x must be provided when resizing a custom-x line.");
+      }
+      xData = this.xData;
+    }
+
+    const upload = this.capacity > 0 && data.length > this.capacity ? data.subarray(data.length - this.capacity) : data;
+    const uploadX =
+      xData && this.capacity > 0 && xData.length > this.capacity ? xData.subarray(xData.length - this.capacity) : xData;
+    const ok = uploadX
+      ? this.plot.wasm.upsertLineXY(this.token, uploadX, upload, false)
+      : this.plot.wasm.upsertLine(this.token, upload, false);
+    if (!ok) {
       throw new Error("Failed to update line data.");
     }
+    this.xData = uploadX || null;
     this.plot._afterDataChange();
     return this;
   }
 
   append(y) {
     this.plot._assertReady();
+    if (this.xData) {
+      throw new Error("append is not supported for custom-x lines; use setData(y, { x }).");
+    }
     if (!this.plot.wasm.appendLineData(this.token, ensureVector(y, "y"), this.capacity)) {
       throw new Error("Failed to append line data.");
     }
@@ -1115,10 +1180,13 @@ export class WebPlot {
     this._assertReady();
     const token = this.nextSeriesToken++;
     const data = ensureVector(y, "y");
+    const xData = options.x != null ? ensureLineX(options.x, data.length) : null;
     const [xAxis, yAxis] = axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1");
     const capacity = Math.max(0, Number(options.maxPoints || options.max_points || 0) | 0);
     const upload = capacity > 0 && data.length > capacity ? data.subarray(data.length - capacity) : data;
-    if (!this.wasm.upsertLine(token, upload, true)) {
+    const uploadX = xData && capacity > 0 && xData.length > capacity ? xData.subarray(xData.length - capacity) : xData;
+    const ok = uploadX ? this.wasm.upsertLineXY(token, uploadX, upload, true) : this.wasm.upsertLine(token, upload, true);
+    if (!ok) {
       throw new Error("Failed to upload line data.");
     }
     this.wasm.setSeriesName(token, name);
@@ -1134,10 +1202,13 @@ export class WebPlot {
       this.wasm.setSeriesVisible(token, false);
     }
     this._afterDataChange();
-    return new LineHandle(this, token, { capacity });
+    return new LineHandle(this, token, { capacity, xData: uploadX });
   }
 
   streamLine(name, options = {}) {
+    if (options.x != null) {
+      throw new Error("streamLine does not support custom x data; use line(..., { x }) with setData(y, { x }) updates.");
+    }
     const capacity = Math.max(1, Number(options.capacity) | 0);
     const initial = options.initial ? ensureVector(options.initial, "initial") : new Float32Array([0]);
     return this.line(name, initial, { ...options, maxPoints: capacity });

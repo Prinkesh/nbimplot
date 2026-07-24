@@ -306,7 +306,7 @@ class WasmCoreSession {
       return false;
     }
     this.module.HEAPF32.set(view, ptr >>> 2);
-    this.module._nbp_line_set_data(
+    const rc = this.module._nbp_line_set_data(
       this.handle,
       seriesToken >>> 0,
       ptr,
@@ -314,7 +314,46 @@ class WasmCoreSession {
       isNewSeries ? 1 : 0,
     );
     this.module._free(ptr);
-    return true;
+    return rc === 0;
+  }
+
+  upsertLineXY(seriesToken, xData, yData, isNewSeries) {
+    if (!this.isReady() || typeof this.module._nbp_line_set_data_xy !== "function") {
+      return false;
+    }
+    const xBuffer = toArrayBuffer(xData);
+    const yBuffer = toArrayBuffer(yData);
+    if (
+      !xBuffer ||
+      !yBuffer ||
+      xBuffer.byteLength % 4 !== 0 ||
+      yBuffer.byteLength % 4 !== 0 ||
+      xBuffer.byteLength !== yBuffer.byteLength
+    ) {
+      return false;
+    }
+
+    const xView = new Float32Array(xBuffer);
+    const yView = new Float32Array(yBuffer);
+    const bytes = yView.byteLength;
+    const ptr = this.module._malloc(bytes * 2);
+    if (ptr === 0) {
+      return false;
+    }
+    const xPtr = ptr;
+    const yPtr = ptr + bytes;
+    this.module.HEAPF32.set(xView, xPtr >>> 2);
+    this.module.HEAPF32.set(yView, yPtr >>> 2);
+    const rc = this.module._nbp_line_set_data_xy(
+      this.handle,
+      seriesToken >>> 0,
+      xPtr,
+      yPtr,
+      yView.length >>> 0,
+      isNewSeries ? 1 : 0,
+    );
+    this.module._free(ptr);
+    return rc === 0;
   }
 
   appendLineData(seriesToken, data, maxPoints) {
@@ -1118,7 +1157,7 @@ class PlotRuntime {
       if (!record) {
         continue;
       }
-      this.wasm.upsertLine(record.token, record.data, true);
+      this._syncLineDataToWasm(record, true);
       this.wasm.setSeriesName(record.token, record.name);
       this.wasm.setSeriesSubplot(record.token, record.subplotIndex || 0);
       this.wasm.setSeriesAxes(record.token, record.xAxis || 0, record.yAxis || 3);
@@ -1806,11 +1845,11 @@ class PlotRuntime {
     }
   }
 
-  _decodeFloat32Buffer(buffers) {
-    if (!buffers || buffers.length === 0) {
+  _decodeFloat32Buffer(buffers, index = 0) {
+    if (!buffers || buffers.length <= index) {
       return null;
     }
-    const buffer = toArrayBuffer(buffers[0]);
+    const buffer = toArrayBuffer(buffers[index]);
     if (!buffer || buffer.byteLength % 4 !== 0) {
       return null;
     }
@@ -1885,9 +1924,24 @@ class PlotRuntime {
     return this.wasm.setSeriesStyle(record.token, record.style || null);
   }
 
+  _syncLineDataToWasm(record, isNewSeries) {
+    if (!this.wasmReady || !record) {
+      return false;
+    }
+    if (record.xData) {
+      return this.wasm.upsertLineXY(record.token, record.xData, record.data, isNewSeries);
+    }
+    return this.wasm.upsertLine(record.token, record.data, isNewSeries);
+  }
+
   _handleLineMessage(content, buffers) {
-    const data = this._decodeFloat32Buffer(buffers);
+    const hasX = Boolean(content.has_x);
+    const xData = hasX ? this._decodeFloat32Buffer(buffers, 0) : null;
+    const data = this._decodeFloat32Buffer(buffers, hasX ? 1 : 0);
     if (!data) {
+      return;
+    }
+    if (hasX && (!xData || xData.length !== data.length)) {
       return;
     }
     const seriesId = String(content.series_id || "");
@@ -1910,12 +1964,13 @@ class PlotRuntime {
       existing.yAxis = yAxis;
       existing.style = style;
       existing.data = data;
+      existing.xData = xData;
       existing.maxPoints = maxPoints;
       existing.visible = !hidden;
       existing.version += 1;
       existing.lodCache = { key: "", points: [] };
       if (this.wasmReady) {
-        this.wasm.upsertLine(existing.token, existing.data, false);
+        this._syncLineDataToWasm(existing, false);
         this.wasm.setSeriesName(existing.token, existing.name);
         this.wasm.setSeriesSubplot(existing.token, existing.subplotIndex || 0);
         this.wasm.setSeriesAxes(existing.token, existing.xAxis || 0, existing.yAxis || 3);
@@ -1948,6 +2003,7 @@ class PlotRuntime {
       slot,
       name,
       data,
+      xData,
       color,
       subplotIndex,
       xAxis,
@@ -1968,7 +2024,7 @@ class PlotRuntime {
     this._refreshLegend();
 
     if (this.wasmReady) {
-      this.wasm.upsertLine(record.token, record.data, true);
+      this._syncLineDataToWasm(record, true);
       this.wasm.setSeriesName(record.token, record.name);
       this.wasm.setSeriesSubplot(record.token, record.subplotIndex || 0);
       this.wasm.setSeriesAxes(record.token, record.xAxis || 0, record.yAxis || 3);
@@ -1995,17 +2051,23 @@ class PlotRuntime {
       return;
     }
 
-    const data = this._decodeFloat32Buffer(buffers);
+    const hasX = Boolean(content.has_x);
+    const xData = hasX ? this._decodeFloat32Buffer(buffers, 0) : null;
+    const data = this._decodeFloat32Buffer(buffers, hasX ? 1 : 0);
     if (!data) {
+      return;
+    }
+    if (hasX && (!xData || xData.length !== data.length)) {
       return;
     }
 
     record.data = data;
+    record.xData = xData;
     record.version += 1;
     record.lodCache = { key: "", points: [] };
 
     if (this.wasmReady) {
-      this.wasm.upsertLine(record.token, record.data, false);
+      this._syncLineDataToWasm(record, false);
     }
 
     if (this.initialAutoFitActive) {
@@ -2019,6 +2081,9 @@ class PlotRuntime {
   _handleAppendDataMessage(content, buffers) {
     const record = this.series.get(content.series_id);
     if (!record) {
+      return;
+    }
+    if (record.xData) {
       return;
     }
     const appended = this._decodeFloat32Buffer(buffers);

@@ -33,6 +33,48 @@ def test_line_sends_binary_float32_payload():
     np.testing.assert_allclose(payload, np.arange(5, dtype=np.float32))
 
 
+def test_line_accepts_explicit_x_and_preserves_it_on_same_length_update():
+    plot = ip.Plot(width=640, height=320, title="x")
+    sent = _capture_messages(plot)
+    x = np.array([0.0, 0.5, 1.5, 3.0], dtype=np.float32)
+    y = np.array([1.0, 2.0, 1.5, 0.0], dtype=np.float32)
+
+    handle = plot.line("custom-x", y, x=x)
+    content, buffers = sent[-1]
+    assert content["type"] == "line"
+    assert content["has_x"] is True
+    assert len(buffers) == 2
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), x)
+    np.testing.assert_allclose(np.frombuffer(buffers[1], dtype=np.float32), y)
+
+    sent.clear()
+    y2 = (y * 2).astype(np.float32)
+    handle.set_data(y2)
+    content, buffers = sent[-1]
+    assert content["type"] == "set_data"
+    assert content["has_x"] is True
+    assert content["reuse_allocation"] is True
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), x)
+    np.testing.assert_allclose(np.frombuffer(buffers[1], dtype=np.float32), y2)
+
+
+def test_line_explicit_x_validation_and_append_rules():
+    plot = ip.Plot()
+    _capture_messages(plot)
+    y = np.arange(4, dtype=np.float32)
+
+    with pytest.raises(ValueError, match="same length"):
+        plot.line("bad", y, x=np.arange(3, dtype=np.float32))
+    with pytest.raises(ValueError, match="sorted"):
+        plot.line("bad", y, x=np.array([0, 2, 1, 3], dtype=np.float32))
+
+    handle = plot.line("custom-x", y, x=np.arange(4, dtype=np.float32))
+    with pytest.raises(ValueError, match="resizing"):
+        handle.set_data(np.arange(5, dtype=np.float32))
+    with pytest.raises(ValueError, match="append is not supported"):
+        handle.append(np.ones(2, dtype=np.float32))
+
+
 def test_set_data_reports_reuse_flag():
     plot = ip.Plot()
     sent = _capture_messages(plot)

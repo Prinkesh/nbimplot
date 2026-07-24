@@ -19,9 +19,9 @@ const examples = [
   {
     id: "line-lod-plot",
     section: "Performance",
-    title: "Million Point Line + LOD",
-    text: "Large time-series path using the default WASM min/max LOD pipeline. Pan, wheel zoom, double-click autoscale, and use the legend/right-click menu.",
-    code: 'const h = plot.line("signal", y);\nh.setData(yNew);\nplot.autoscale();',
+    title: "Million Point Line + Custom X + LOD",
+    text: "Large time-series path using explicit x data and the default WASM min/max LOD pipeline. Pan, wheel zoom, double-click autoscale, and use the legend/right-click menu.",
+    code: 'const h = plot.line("signal", y, { x });\nh.setData(yNew, { x });\nplot.autoscale();',
   },
   {
     id: "streaming-plot",
@@ -84,7 +84,7 @@ const examples = [
     section: "Layout",
     title: "Linked Subplots",
     text: "A 2x2 ImPlot subplot grid with shared x-axis interaction and mixed plot primitives.",
-    code: 'plot.setSubplots(2, 2, { linkAllX: true });\nplot.line("a", y, { subplotIndex: 0 });\nplot.scatter("b", y, { x, subplotIndex: 1 });',
+    code: 'plot.setSubplots(2, 2, { linkAllX: true });\nplot.line("a", y, { x, subplotIndex: 0 });\nplot.scatter("b", y, { x, subplotIndex: 1 });',
   },
   {
     id: "drag-plot",

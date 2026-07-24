@@ -20,6 +20,7 @@ const state = {
   colormapPlots: [],
   lineSeries: null,
   lineData: null,
+  lineX: null,
   linePhase: 0,
   streamHandle: null,
   streamPlot: null,
@@ -365,16 +366,17 @@ function setupLazyLoading() {
 
 async function buildLineLod() {
   const n = 1_000_000;
+  const x = range(n, 0.001);
   const y = makeSignal(new Float32Array(n));
   const plot = await mountPlot("line-lod-plot", {
-    title: "Million Point Line - WASM LOD",
+    title: "Million Point Line - Custom X + WASM LOD",
   });
-  plot.setAxisLabel("x1", "sample");
+  plot.setAxisLabel("x1", "time (s)");
   plot.setAxisLabel("y1", "value");
   plot.setAxisFormat("y1", "%.2f");
-  const handle = plot.line("signal", y, { color: "#1f6f66", lineWeight: 2 });
+  const handle = plot.line("signal", y, { x, color: "#1f6f66", lineWeight: 2 });
   plot.hlines("baseline", new Float32Array([0]));
-  plot.vlines("spike markers", new Float32Array([131071, 262142, 524284, 786426]));
+  plot.vlines("spike markers", new Float32Array([131.071, 262.142, 524.284, 786.426]));
   plot.tagY(0, { labelFmt: "zero", roundValue: false });
   plot.onPerfStats((stats) => {
     if (!frameMs) return;
@@ -382,6 +384,7 @@ async function buildLineLod() {
   });
   state.lineSeries = handle;
   state.lineData = y;
+  state.lineX = x;
   return plot;
 }
 
@@ -721,7 +724,7 @@ async function main() {
     if (!state.lineSeries || !state.lineData) return;
     state.linePhase += 0.55;
     makeSignal(state.lineData, state.linePhase);
-    state.lineSeries.setData(state.lineData);
+    state.lineSeries.setData(state.lineData, { x: state.lineX });
   });
 
   on(streamButton, "click", async () => {
