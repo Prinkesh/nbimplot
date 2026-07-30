@@ -1,9 +1,10 @@
-import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=feature-workbench";
+import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=hero-showcase";
 
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
 
-const MAX_ACTIVE_PLOTS = 4;
+const HERO_ID = "hero-showcase-plot";
+const MAX_ACTIVE_PLOTS = 5;
 
 const state = {
   plots: [],
@@ -316,6 +317,7 @@ function releaseExample(id, message = "Released offscreen to keep WebGL contexts
 function enforceActiveBudget() {
   if (state.plotById.size <= MAX_ACTIVE_PLOTS) return;
   for (const id of state.plotById.keys()) {
+    if (id === HERO_ID) continue;
     if (state.visibleIds.has(id)) continue;
     releaseExample(id);
     if (state.plotById.size <= MAX_ACTIVE_PLOTS) break;
@@ -453,6 +455,52 @@ function setupLazyLoading() {
     const host = document.querySelector(`#${id}`);
     if (host) state.observer.observe(host);
   }
+}
+
+async function buildHeroShowcase() {
+  const n = 4_800;
+  const x = range(n, 0.02);
+  const signal = new Float32Array(n);
+  const lower = new Float32Array(n);
+  const upper = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    const base = Math.sin(i * 0.018) * 0.55 + Math.cos(i * 0.006) * 0.28;
+    const pulse = i % 829 === 0 ? 0.85 : 0;
+    signal[i] = base + 0.11 * Math.sin(i * 0.13) + pulse;
+    lower[i] = base - 0.28 - 0.05 * Math.sin(i * 0.025);
+    upper[i] = base + 0.28 + 0.05 * Math.cos(i * 0.021) + pulse * 0.35;
+  }
+
+  const eventCount = 9;
+  const eventX = new Float32Array(eventCount);
+  const eventY = new Float32Array(eventCount);
+  for (let i = 0; i < eventCount; i += 1) {
+    const idx = Math.min(n - 1, 360 + i * 470);
+    eventX[i] = x[idx];
+    eventY[i] = signal[idx];
+  }
+
+  const plot = await mountPlot(HERO_ID, {
+    title: "Live WASM ImPlot Surface",
+    crosshairs: true,
+  });
+  plot.setAxisLabel("x1", "time");
+  plot.setAxisLabel("y1", "signal");
+  plot.setAxisFormat("y1", "%.2f");
+  plot.shaded("envelope", lower, upper, { x, alpha: 0.22 });
+  plot.line("live signal", signal, { x, color: "#41e2cd", lineWeight: 2 });
+  plot.scatter("events", eventY, { x: eventX, marker: "diamond", size: 5, color: "#ffc46f" });
+  plot.vlines("deploys", new Float32Array([18, 43, 72]));
+  plot.tagY(0, { labelFmt: "zero", roundValue: false });
+  plot.setView(0, 96, -1.15, 1.45);
+  plot.onHover((event) => {
+    setFeatureStatus(`Hero hover: ${event.seriesName} x=${event.x.toFixed(2)} y=${event.y.toFixed(3)}`);
+  });
+  plot.onPerfStats((stats) => {
+    if (!frameMs) return;
+    frameMs.textContent = `${stats.frameMs.toFixed(2)} ms | hero ${Math.round(stats.drawPoints).toLocaleString()} drawn`;
+  });
+  return plot;
 }
 
 async function buildLineLod() {
@@ -920,9 +968,11 @@ async function buildAdvancedApi() {
 }
 
 async function main() {
+  setHostStatus(HERO_ID, "Loading live WASM plot...");
   const probe = probeWebGL2();
   if (!probe.available) {
     setMode("WebGL2 unavailable");
+    setHostError(HERO_ID, probe.reason);
     for (const id of ids) setHostError(id, probe.reason);
     return;
   }
@@ -947,6 +997,8 @@ async function main() {
 
   state.totalExamples = builders.length;
   state.builders = new Map(builders);
+  updateLoadMode();
+  await runExample(HERO_ID, buildHeroShowcase);
   updateLoadMode();
   setupLazyLoading();
 

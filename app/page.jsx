@@ -7,19 +7,11 @@ const stats = [
   ["LOD", "Min/max buckets"],
 ];
 
-const pipeline = [
-  "Notebook API",
-  "Binary buffers",
-  "WASM heap",
-  "ImGui + ImPlot",
-  "WebGL2 canvas",
-];
-
 const heroBadges = ["WASM only", "ImPlot native", "Jupyter + Web"];
 
 const heroProofs = [
   ["10M", "line points target"],
-  ["O(px)", "LOD interaction cost"],
+  ["O(px)", "interaction cost"],
   ["0", "JS render fallback"],
 ];
 
@@ -126,6 +118,8 @@ const examples = [
   },
 ];
 
+const exampleSections = Array.from(new Set(examples.map((example) => example.section)));
+
 export default function Page() {
   return (
     <main className="demo-shell">
@@ -138,7 +132,7 @@ export default function Page() {
           <a href="https://pypi.org/project/nbimplot/">PyPI</a>
           <a href="https://www.npmjs.com/package/@nbimplot/web">npm</a>
           <a href="https://github.com/Prinkesh/nbimplot">GitHub</a>
-          <a className="topbar-cta" href="#feature-workbench">Try APIs</a>
+          <a className="topbar-cta" href="#command-center">Try APIs</a>
         </div>
       </nav>
 
@@ -152,9 +146,9 @@ export default function Page() {
           <p className="eyebrow">ImPlot quality, notebook reach</p>
           <h1>Fast plotting for <span>million-point</span> workflows.</h1>
           <p className="hero-copy">
-            nbimplot renders inside notebook output cells with the same strict WASM/ImPlot
-            core shown here: typed-array uploads, screen-resolution LOD, native pan/zoom,
-            hover inspection, context menus, subplots, colormaps, and streaming updates.
+            nbimplot brings an ImGui + ImPlot WASM core to notebooks and browser apps:
+            binary typed-array uploads, screen-resolution LOD, native pan/zoom, context
+            menus, subplots, colormaps, streaming updates, and exact selection APIs.
           </p>
           <div className="hero-actions">
             <a className="primary-link" href="#examples">Explore Examples</a>
@@ -169,80 +163,23 @@ export default function Page() {
             ))}
           </div>
         </div>
-        <div className="hero-card" aria-label="Rendering pipeline">
-          <div className="hero-card-header">
-            <span>Runtime Trace</span>
-            <strong>No JS renderer</strong>
-          </div>
-          <div className="terminal-card" aria-label="Install commands">
-            <div className="terminal-dots" aria-hidden="true">
-              <i />
-              <i />
-              <i />
+
+        <div className="hero-live-card" aria-label="Live nbimplot canvas">
+          <div className="hero-live-header">
+            <div>
+              <span>Live Surface</span>
+              <strong>ImPlot WASM canvas</strong>
             </div>
-            <code>pip install nbimplot</code>
-            <code>npm install @nbimplot/web</code>
+            <code>drag pan / wheel zoom / double-click fit</code>
           </div>
-          <ol className="pipeline-list">
-            {pipeline.map((step) => (
-              <li key={step}>{step}</li>
-            ))}
-          </ol>
-          <div className="hero-card-footer">
-            Interaction cost scales with canvas pixels, not raw point count.
+          <div className="hero-live-frame">
+            <div id="hero-showcase-plot" className="plot-host hero-plot-host" />
           </div>
-        </div>
-      </section>
-
-      <section className="control-panel" aria-label="Global demo controls">
-        <div className="control-copy">
-          <span>Live Controls</span>
-          <strong>Drive the loaded WASM plots</strong>
-        </div>
-        <div className="toolbar">
-          <button id="update-data" type="button" data-label="data">Update Data</button>
-          <button id="toggle-stream" type="button" data-label="stream">Start Stream</button>
-          <button id="autoscale" type="button" data-label="view">Autoscale All</button>
-          <button id="export-png" type="button" data-label="export">Export PNG</button>
-          <label className="select-wrap">
-            <span>Colormap</span>
-            <select id="colormap-select" defaultValue="Viridis">
-              <option value="Viridis">Viridis</option>
-              <option value="Plasma">Plasma</option>
-              <option value="Hot">Hot</option>
-              <option value="Cool">Cool</option>
-              <option value="Jet">Jet</option>
-              <option value="Deep">Deep</option>
-              <option value="Dark">Dark</option>
-              <option value="Pastel">Pastel</option>
-              <option value="Paired">Paired</option>
-            </select>
-          </label>
-        </div>
-      </section>
-
-      <section id="feature-workbench" className="feature-workbench" aria-label="Visible feature workbench">
-        <div className="feature-workbench-copy">
-          <p className="eyebrow">Feature Workbench</p>
-          <h2>Exercise the release APIs directly.</h2>
-          <p>
-            These buttons load the target WASM canvas, scroll it into view, and run the
-            new visible features: streaming controls, exact selection highlighting,
-            state snapshots, linked crosshairs, and clipboard PNG export.
-          </p>
-          <p id="feature-status" className="feature-status">
-            Pick an action. The app will load the matching example and report the result here.
-          </p>
-        </div>
-        <div className="feature-actions">
-          <button id="stream-pause" type="button" data-label="stream">Pause Stream</button>
-          <button id="stream-clear" type="button" data-label="buffer">Clear Stream</button>
-          <button id="stream-window" type="button" data-label="window">Set 3k Window</button>
-          <button id="run-selection-demo" type="button" data-label="select">Highlight Selection</button>
-          <button id="export-state" type="button" data-label="state">Download State JSON</button>
-          <button id="restore-state" type="button" data-label="state">Restore State</button>
-          <button id="copy-png" type="button" data-label="image">Copy PNG</button>
-          <button id="toggle-crosshair" type="button" data-label="link">Disable Crosshair Link</button>
+          <div className="hero-live-footer">
+            <span>Binary data path</span>
+            <span>LOD by default</span>
+            <span>No native window</span>
+          </div>
         </div>
       </section>
 
@@ -258,7 +195,7 @@ export default function Page() {
           <strong id="mode">initializing</strong>
         </div>
         <div>
-          <span>Examples</span>
+          <span>Gallery</span>
           <strong>{examples.length} lazy plots</strong>
         </div>
         <div>
@@ -267,39 +204,101 @@ export default function Page() {
         </div>
       </section>
 
-      <section className="notes-panel">
-        <strong>Interaction checklist:</strong> examples lazy-load as they approach the
-        viewport and offscreen canvases are released to keep WebGL contexts bounded.
-        Once loaded, left-drag pans, wheel zooms, scroll over axes zooms that axis,
-        right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot
-        behavior, and double-click autofits.
-      </section>
-
-      <section className="resource-panel" aria-label="Documentation and AI-readable resources">
-        <div>
-          <p className="eyebrow">Documentation</p>
-          <h2>Human-readable and agent-readable guides.</h2>
+      <section id="command-center" className="command-center" aria-label="Interactive API command center">
+        <div className="command-copy">
+          <p className="eyebrow">Command Center</p>
+          <h2>Drive real WASM plots from the page.</h2>
           <p>
-            These links make the project easier to classify for users, search engines,
-            coding assistants, and retrieval-augmented agents looking for fast notebook
-            plotting, ImPlot in Jupyter, WASM plotting, and large-data visualization.
+            These controls load the target canvas, scroll it into view, and call the same
+            public APIs available from notebook widgets and web apps.
+          </p>
+          <p id="feature-status" className="feature-status">
+            Pick an action. The app will load the matching example and report the result here.
           </p>
         </div>
-        <div className="resource-links">
-          {resourceLinks.map(([label, href]) => (
-            <a key={label} href={href}>{label}</a>
-          ))}
+
+        <div className="command-stack">
+          <section className="control-panel" aria-label="Global demo controls">
+            <div className="control-copy">
+              <span>Live Controls</span>
+              <strong>Operate loaded plots</strong>
+            </div>
+            <div className="toolbar">
+              <button id="update-data" type="button" data-label="data">Update Data</button>
+              <button id="toggle-stream" type="button" data-label="stream">Start Stream</button>
+              <button id="autoscale" type="button" data-label="view">Autoscale All</button>
+              <button id="export-png" type="button" data-label="export">Export PNG</button>
+              <label className="select-wrap">
+                <span>Colormap</span>
+                <select id="colormap-select" defaultValue="Viridis">
+                  <option value="Viridis">Viridis</option>
+                  <option value="Plasma">Plasma</option>
+                  <option value="Hot">Hot</option>
+                  <option value="Cool">Cool</option>
+                  <option value="Jet">Jet</option>
+                  <option value="Deep">Deep</option>
+                  <option value="Dark">Dark</option>
+                  <option value="Pastel">Pastel</option>
+                  <option value="Paired">Paired</option>
+                </select>
+              </label>
+            </div>
+          </section>
+
+          <section className="feature-workbench" aria-label="Feature workbench controls">
+            <div className="feature-actions">
+              <button id="stream-pause" type="button" data-label="stream">Pause Stream</button>
+              <button id="stream-clear" type="button" data-label="buffer">Clear Stream</button>
+              <button id="stream-window" type="button" data-label="window">Set 3k Window</button>
+              <button id="run-selection-demo" type="button" data-label="select">Highlight Selection</button>
+              <button id="export-state" type="button" data-label="state">Download State JSON</button>
+              <button id="restore-state" type="button" data-label="state">Restore State</button>
+              <button id="copy-png" type="button" data-label="image">Copy PNG</button>
+              <button id="toggle-crosshair" type="button" data-label="link">Disable Crosshair Link</button>
+            </div>
+          </section>
         </div>
+      </section>
+
+      <section className="info-grid" aria-label="Usage notes and documentation">
+        <section className="notes-panel">
+          <strong>Interaction checklist:</strong> examples lazy-load as they approach the
+          viewport and offscreen canvases are released to keep WebGL contexts bounded.
+          Once loaded, left-drag pans, wheel zooms, scroll over axes zooms that axis,
+          right-click opens ImPlot menus, right-drag box-select/box-zoom follows ImPlot
+          behavior, and double-click autofits.
+        </section>
+
+        <section className="resource-panel" aria-label="Documentation and AI-readable resources">
+          <div>
+            <p className="eyebrow">Documentation</p>
+            <h2>Human-readable and agent-readable guides.</h2>
+            <p>
+              These links make the project easier to classify for users, search engines,
+              coding assistants, and retrieval-augmented agents looking for fast notebook
+              plotting, ImPlot in Jupyter, WASM plotting, and large-data visualization.
+            </p>
+          </div>
+          <div className="resource-links">
+            {resourceLinks.map(([label, href]) => (
+              <a key={label} href={href}>{label}</a>
+            ))}
+          </div>
+        </section>
       </section>
 
       <section id="examples" className="examples-heading">
         <p className="eyebrow">Examples Gallery</p>
         <h2>Every supported plot primitive, grouped like release documentation.</h2>
         <p>
-          These canvases are intentionally lazy-loaded. Scroll through the gallery to
-          verify multiple independent WASM sessions, lifecycle cleanup, interaction
-          primitives, and colormap propagation.
+          Scroll through lazy-loaded canvases to verify independent WASM sessions,
+          lifecycle cleanup, interaction primitives, and colormap propagation.
         </p>
+        <div className="example-tabs" aria-label="Example categories">
+          {exampleSections.map((section) => (
+            <span key={section}>{section}</span>
+          ))}
+        </div>
       </section>
 
       <section className="examples-grid">
