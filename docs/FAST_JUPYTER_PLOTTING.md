@@ -44,6 +44,23 @@ p
 
 Use `p.show()` when displaying before additional code or printed output.
 
+## DataFrame Columns
+
+The existing plotting methods accept dataframe-like objects directly. Pass
+column names through `x=`, `y=`, `sizes=`, `err=`, and related arguments:
+
+```python
+df = pd.DataFrame({"time": x, "signal": y, "err": err})
+
+p = ip.Plot(width=900, height=450, title="DataFrame Signal")
+h = p.line("signal", df, x="time", y="signal")
+p.error_bars("uncertainty", df, x="time", y="signal", err="err")
+p
+```
+
+This is only input normalization in Python. Data still moves to the frontend as
+binary `float32` buffers, and the WASM core still handles LOD.
+
 ## Update Existing Data
 
 ```python
@@ -59,6 +76,12 @@ p.render()
 ```
 
 If the new y array changes length, pass a replacement x array too.
+For dataframe-backed updates, use the same handle:
+
+```python
+h.set_data(df_next, x="time", y="signal")
+p.render()
+```
 
 ## Interaction Callbacks
 

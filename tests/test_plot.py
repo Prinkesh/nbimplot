@@ -15,6 +15,15 @@ def _capture_messages(plot: ip.Plot):
     return sent
 
 
+class _Frame:
+    def __init__(self, **columns):
+        self._columns = columns
+        self.columns = list(columns)
+
+    def __getitem__(self, key):
+        return self._columns[key]
+
+
 def test_line_sends_binary_float32_payload():
     plot = ip.Plot(width=640, height=320, title="t")
     sent = _capture_messages(plot)
@@ -31,6 +40,12 @@ def test_line_sends_binary_float32_payload():
 
     payload = np.frombuffer(buffers[0], dtype=np.float32)
     np.testing.assert_allclose(payload, np.arange(5, dtype=np.float32))
+
+    sent.clear()
+    plot.line("kw", y=np.arange(4, dtype=np.float32))
+    content, buffers = sent[-1]
+    assert content["name"] == "kw"
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), np.arange(4, dtype=np.float32))
 
 
 def test_line_accepts_explicit_x_and_preserves_it_on_same_length_update():
@@ -147,6 +162,44 @@ def test_line_requires_non_empty_numeric_1d():
         plot.line("bad", np.array(["a", "b"]))
 
 
+def test_line_accepts_dataframe_columns_without_new_api():
+    plot = ip.Plot(width=640, height=320, title="df")
+    sent = _capture_messages(plot)
+    frame = _Frame(
+        t=np.array([0.0, 0.5, 1.5, 3.0], dtype=np.float64),
+        mid=np.array([1.0, 2.0, 1.5, 0.0], dtype=np.float64),
+        next_mid=np.array([1.5, 2.5, 2.0, 0.5], dtype=np.float64),
+    )
+
+    handle = plot.line("mid", frame, x="t", y="mid")
+    content, buffers = sent[-1]
+    assert content["type"] == "line"
+    assert content["has_x"] is True
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), frame["t"])
+    np.testing.assert_allclose(np.frombuffer(buffers[1], dtype=np.float32), frame["mid"])
+
+    sent.clear()
+    handle.set_data(frame, x="t", y="next_mid")
+    content, buffers = sent[-1]
+    assert content["type"] == "set_data"
+    assert content["reuse_allocation"] is True
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), frame["t"])
+    np.testing.assert_allclose(np.frombuffer(buffers[1], dtype=np.float32), frame["next_mid"])
+
+
+def test_dataframe_column_errors_are_explicit():
+    plot = ip.Plot()
+    _capture_messages(plot)
+    frame = _Frame(x=np.arange(3, dtype=np.float32), y=np.arange(3, dtype=np.float32))
+
+    with pytest.raises(ValueError, match="y column"):
+        plot.line("bad", frame, x="x")
+    with pytest.raises(KeyError, match="Unknown y column"):
+        plot.line("bad", frame, x="x", y="missing")
+    with pytest.raises(KeyError, match="Unknown x column"):
+        plot.line("bad", frame, x="missing", y="y")
+
+
 def test_plot_replays_series_after_frontend_ready():
     plot = ip.Plot()
     sent = _capture_messages(plot)
@@ -232,6 +285,59 @@ def test_additional_primitives_send_payloads():
     content, buffers = sent[-1]
     assert content["kind"] == "dummy"
     assert len(buffers) == 0
+
+
+def test_dataframe_columns_work_for_common_primitives():
+    plot = ip.Plot()
+    sent = _capture_messages(plot)
+    frame = _Frame(
+        x=np.array([0, 1, 2, 3], dtype=np.float32),
+        y=np.array([1.0, 2.0, 1.5, 2.5], dtype=np.float32),
+        y2=np.array([1.5, 2.5, 2.0, 3.0], dtype=np.float32),
+        size=np.array([0.2, 0.4, 0.6, 0.8], dtype=np.float32),
+        err=np.array([0.1, 0.2, 0.15, 0.25], dtype=np.float32),
+    )
+
+    plot.scatter("scatter", frame, x="x", y="y", size=3.0)
+    content, buffers = sent[-1]
+    assert content["kind"] == "scatter"
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), frame["x"])
+    np.testing.assert_allclose(np.frombuffer(buffers[1], dtype=np.float32), frame["y"])
+
+    plot.bubbles("bubbles", frame, sizes="size", x="x", y="y")
+    content, buffers = sent[-1]
+    assert content["kind"] == "bubbles"
+    assert len(buffers) == 3
+
+    plot.shaded("band", frame, y1="y", y2="y2", x="x")
+    content, buffers = sent[-1]
+    assert content["kind"] == "shaded"
+    assert len(buffers) == 3
+
+    plot.error_bars("err", frame, y="y", err="err", x="x")
+    content, buffers = sent[-1]
+    assert content["kind"] == "error_bars"
+    assert len(buffers) == 3
+
+    plot.bars("bars", frame, x="x", y="y")
+    content, buffers = sent[-1]
+    assert content["kind"] == "bars"
+    assert len(buffers) == 2
+
+    plot.bars_h("bars_h", frame, x="y", y="x")
+    content, buffers = sent[-1]
+    assert content["kind"] == "bars_h"
+    assert len(buffers) == 2
+
+    plot.histogram("hist", frame, y="y", bins=2)
+    content, buffers = sent[-1]
+    assert content["kind"] == "histogram"
+    assert len(buffers) == 2
+
+    plot.histogram2d("hist2d", frame, x="x", y="y", x_bins=2, y_bins=2)
+    content, buffers = sent[-1]
+    assert content["kind"] == "histogram2d"
+    assert len(buffers) == 3
 
 
 def test_heatmap_and_histogram2d_format_options():

@@ -52,7 +52,14 @@ _SERIES_MARKER_MAP: dict[str, int] = {
     "plus": 8,
     "asterisk": 9,
 }
-_UNSET = object()
+
+
+class _UnsetType:
+    def __repr__(self) -> str:
+        return "UNSET"
+
+
+_UNSET = _UnsetType()
 
 _COLORMAP_CANONICAL_NAMES: dict[str, str] = {
     "deep": "Deep",
@@ -146,6 +153,81 @@ def _with_text_plain(
     else:
         data.pop("text/plain", None)
     return data, metadata
+
+
+def _is_dataframe_like(data: Any) -> bool:
+    if data is _UNSET or isinstance(data, (str, bytes, bytearray, memoryview, np.ndarray)):
+        return False
+    return hasattr(data, "columns") and hasattr(data, "__getitem__")
+
+
+def _is_column_selector(value: Any) -> bool:
+    return isinstance(value, (str, int, np.integer))
+
+
+def _column_names(data: Any) -> list[str]:
+    try:
+        columns = list(getattr(data, "columns"))
+    except TypeError:
+        return []
+    return [str(column) for column in columns]
+
+
+def _has_column(data: Any, key: Any) -> bool:
+    try:
+        return bool(key in getattr(data, "columns"))
+    except TypeError:
+        return False
+
+
+def _dataframe_column(data: Any, key: Any, *, arg_name: str) -> Any:
+    if not _is_dataframe_like(data):
+        raise TypeError(f"{arg_name} column selection requires a dataframe-like positional argument.")
+    if not _is_column_selector(key):
+        raise TypeError(f"{arg_name} column selector must be a string or integer column name.")
+    if not _has_column(data, key):
+        available = ", ".join(_column_names(data)[:12])
+        suffix = f" Available columns: {available}." if available else ""
+        raise KeyError(f"Unknown {arg_name} column: {key!r}.{suffix}")
+    try:
+        return data[key]
+    except Exception as exc:  # pragma: no cover - defensive for dataframe implementations.
+        raise KeyError(f"Unable to read {arg_name} column {key!r}.") from exc
+
+
+def _resolve_y_input(data: Any, y: Any = _UNSET, *, arg_name: str = "y") -> Any:
+    if y is _UNSET:
+        if data is _UNSET:
+            raise TypeError(f"{arg_name} data is required.")
+        if _is_dataframe_like(data):
+            raise ValueError(f"{arg_name} column must be provided when the data argument is a dataframe.")
+        return data
+    if data is _UNSET:
+        return y
+    if not _is_dataframe_like(data):
+        raise TypeError(f"{arg_name}= is only valid with a dataframe-like positional argument.")
+    return _dataframe_column(data, y, arg_name=arg_name)
+
+
+def _resolve_maybe_column(data: Any, value: Any, *, arg_name: str) -> Any:
+    if value is _UNSET or value is None:
+        return value
+    if _is_dataframe_like(data) and _is_column_selector(value):
+        return _dataframe_column(data, value, arg_name=arg_name)
+    return value
+
+
+def _resolve_xy_inputs(
+    data: Any,
+    *,
+    x: Any | None = None,
+    y: Any = _UNSET,
+    y_arg_name: str = "y",
+) -> tuple[Any | None, Any]:
+    return (
+        _resolve_maybe_column(data, x, arg_name="x") if x is not None else None,
+        _resolve_y_input(data, y, arg_name=y_arg_name),
+    )
 
 
 def _to_float32_1d(data: Any, *, arg_name: str) -> np.ndarray:
@@ -314,8 +396,8 @@ class LineHandle:
     def name(self) -> str:
         return self._name
 
-    def set_data(self, y: Any, *, x: Any | None = None) -> None:
-        self._plot._set_series_data(self._series_id, y, x=x)
+    def set_data(self, data: Any = _UNSET, *, x: Any | None = None, y: Any = _UNSET) -> None:
+        self._plot._set_series_data(self._series_id, data, x=x, y=y)
 
     def append(self, y: Any, *, x: Any | None = None, max_points: int | None = None) -> None:
         if self._paused:
@@ -489,9 +571,10 @@ class Plot(anywidget.AnyWidget):
     def line(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
@@ -507,8 +590,9 @@ class Plot(anywidget.AnyWidget):
         subplot_idx = self._validate_subplot_index(subplot_index)
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
 
-        data = _to_float32_1d(y, arg_name="y")
-        x_data = _to_line_x(x, y_len=int(data.size)) if x is not None else None
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
+        data = _to_float32_1d(y_values, arg_name="y")
+        x_data = _to_line_x(x_values, y_len=int(data.size)) if x_values is not None else None
         capacity: int | None = None
         if max_points is not None:
             capacity_i = int(max_points)
@@ -618,19 +702,21 @@ class Plot(anywidget.AnyWidget):
     def scatter(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         size: float = 2.0,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         self._send_xy_primitive(
             "scatter",
             name=name,
-            y=y,
-            x=x,
+            y=y_values,
+            x=x_values,
             size=float(size),
             subplot_index=subplot_index,
             x_axis=x_axis,
@@ -640,23 +726,28 @@ class Plot(anywidget.AnyWidget):
     def bubbles(
         self,
         name: str,
-        y: Any,
-        sizes: Any,
+        data: Any = _UNSET,
+        sizes: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
-        values_y = _to_float32_1d(y, arg_name="y")
-        values_sizes = _to_float32_1d(sizes, arg_name="sizes")
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
+        if sizes is _UNSET:
+            raise TypeError("sizes data is required.")
+        size_values = _resolve_maybe_column(data, sizes, arg_name="sizes")
+        values_y = _to_float32_1d(y_values, arg_name="y")
+        values_sizes = _to_float32_1d(size_values, arg_name="sizes")
         if values_y.size != values_sizes.size:
             raise ValueError("y and sizes must have the same length.")
-        has_x = x is not None
+        has_x = x_values is not None
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
         buffers: list[np.ndarray] = [values_y, values_sizes]
         if has_x:
-            values_x = _to_float32_1d(x, arg_name="x")
+            values_x = _to_float32_1d(x_values, arg_name="x")
             if values_x.size != values_y.size:
                 raise ValueError("x, y, and sizes must have the same length.")
             buffers.insert(0, values_x)
@@ -677,18 +768,20 @@ class Plot(anywidget.AnyWidget):
     def stairs(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         self._send_xy_primitive(
             "stairs",
             name=name,
-            y=y,
-            x=x,
+            y=y_values,
+            x=x_values,
             subplot_index=subplot_index,
             x_axis=x_axis,
             y_axis=y_axis,
@@ -697,18 +790,20 @@ class Plot(anywidget.AnyWidget):
     def stems(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         self._send_xy_primitive(
             "stems",
             name=name,
-            y=y,
-            x=x,
+            y=y_values,
+            x=x_values,
             subplot_index=subplot_index,
             x_axis=x_axis,
             y_axis=y_axis,
@@ -717,18 +812,20 @@ class Plot(anywidget.AnyWidget):
     def digital(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         self._send_xy_primitive(
             "digital",
             name=name,
-            y=y,
-            x=x,
+            y=y_values,
+            x=x_values,
             subplot_index=subplot_index,
             x_axis=x_axis,
             y_axis=y_axis,
@@ -737,19 +834,21 @@ class Plot(anywidget.AnyWidget):
     def bars(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
         x: Any | None = None,
+        y: Any = _UNSET,
         bar_width: float = 0.67,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         self._send_xy_primitive(
             "bars",
             name=name,
-            y=y,
-            x=x,
+            y=y_values,
+            x=x_values,
             bar_width=float(bar_width),
             subplot_index=subplot_index,
             x_axis=x_axis,
@@ -793,8 +892,9 @@ class Plot(anywidget.AnyWidget):
     def bars_h(
         self,
         name: str,
-        x: Any,
+        data: Any = _UNSET,
         *,
+        x: Any = _UNSET,
         y: Any | None = None,
         bar_height: float = 0.67,
         subplot_index: int = 0,
@@ -802,10 +902,19 @@ class Plot(anywidget.AnyWidget):
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        values_x = _to_float32_1d(x, arg_name="x")
+        if x is _UNSET:
+            if data is _UNSET:
+                raise TypeError("x data is required.")
+            if _is_dataframe_like(data):
+                raise ValueError("x column must be provided when the data argument is a dataframe.")
+            x_values = data
+        else:
+            x_values = _resolve_maybe_column(data, x, arg_name="x")
+        y_values = _resolve_maybe_column(data, y, arg_name="y") if y is not None else None
+        values_x = _to_float32_1d(x_values, arg_name="x")
         values_y = (
-            _to_float32_1d(y, arg_name="y")
-            if y is not None
+            _to_float32_1d(y_values, arg_name="y")
+            if y_values is not None
             else np.arange(values_x.size, dtype=np.float32)
         )
         if values_x.size != values_y.size:
@@ -827,24 +936,37 @@ class Plot(anywidget.AnyWidget):
     def shaded(
         self,
         name: str,
-        y1: Any,
-        y2: Any,
+        data: Any = _UNSET,
+        y2: Any = _UNSET,
         *,
         x: Any | None = None,
+        y1: Any = _UNSET,
         alpha: float = 0.2,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        values_y1 = _to_float32_1d(y1, arg_name="y1")
-        values_y2 = _to_float32_1d(y2, arg_name="y2")
+        if y1 is _UNSET:
+            if data is _UNSET:
+                raise TypeError("y1 data is required.")
+            if _is_dataframe_like(data):
+                raise ValueError("y1 column must be provided when the data argument is a dataframe.")
+            y1_values = data
+        else:
+            y1_values = _resolve_maybe_column(data, y1, arg_name="y1")
+        if y2 is _UNSET:
+            raise TypeError("y2 data is required.")
+        y2_values = _resolve_maybe_column(data, y2, arg_name="y2")
+        x_values = _resolve_maybe_column(data, x, arg_name="x") if x is not None else None
+        values_y1 = _to_float32_1d(y1_values, arg_name="y1")
+        values_y2 = _to_float32_1d(y2_values, arg_name="y2")
         if values_y1.size != values_y2.size:
             raise ValueError("y1 and y2 must have the same length.")
         buffers: list[np.ndarray] = [values_y1, values_y2]
-        has_x = x is not None
+        has_x = x_values is not None
         if has_x:
-            values_x = _to_float32_1d(x, arg_name="x")
+            values_x = _to_float32_1d(x_values, arg_name="x")
             if values_x.size != values_y1.size:
                 raise ValueError("x and y arrays must have the same length.")
             buffers.insert(0, values_x)
@@ -866,9 +988,10 @@ class Plot(anywidget.AnyWidget):
     def error_bars(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         err: Any | None = None,
         *,
+        y: Any = _UNSET,
         err_neg: Any | None = None,
         err_pos: Any | None = None,
         x: Any | None = None,
@@ -877,15 +1000,22 @@ class Plot(anywidget.AnyWidget):
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        values_y = _to_float32_1d(y, arg_name="y")
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
+        values_y = _to_float32_1d(y_values, arg_name="y")
         asymmetric = err_neg is not None or err_pos is not None
         if asymmetric:
             if err is not None:
                 raise ValueError("Use either err OR (err_neg, err_pos), not both.")
             if err_neg is None or err_pos is None:
                 raise ValueError("Both err_neg and err_pos are required for asymmetric error bars.")
-            values_err_neg = _to_float32_1d(err_neg, arg_name="err_neg")
-            values_err_pos = _to_float32_1d(err_pos, arg_name="err_pos")
+            values_err_neg = _to_float32_1d(
+                _resolve_maybe_column(data, err_neg, arg_name="err_neg"),
+                arg_name="err_neg",
+            )
+            values_err_pos = _to_float32_1d(
+                _resolve_maybe_column(data, err_pos, arg_name="err_pos"),
+                arg_name="err_pos",
+            )
             if values_y.size != values_err_neg.size or values_y.size != values_err_pos.size:
                 raise ValueError("y, err_neg, and err_pos must have the same length.")
             err_interleaved = np.empty(values_y.size * 2, dtype=np.float32)
@@ -895,13 +1025,13 @@ class Plot(anywidget.AnyWidget):
         else:
             if err is None:
                 raise ValueError("err is required for symmetric error bars.")
-            values_err = _to_float32_1d(err, arg_name="err")
+            values_err = _to_float32_1d(_resolve_maybe_column(data, err, arg_name="err"), arg_name="err")
             if values_y.size != values_err.size:
                 raise ValueError("y and err must have the same length.")
             buffers = [values_y, values_err]
-        has_x = x is not None
+        has_x = x_values is not None
         if has_x:
-            values_x = _to_float32_1d(x, arg_name="x")
+            values_x = _to_float32_1d(x_values, arg_name="x")
             if values_x.size != values_y.size:
                 raise ValueError("x and y arrays must have the same length.")
             buffers.insert(0, values_x)
@@ -923,9 +1053,10 @@ class Plot(anywidget.AnyWidget):
     def error_bars_h(
         self,
         name: str,
-        x: Any,
+        data: Any = _UNSET,
         err: Any | None = None,
         *,
+        x: Any = _UNSET,
         err_neg: Any | None = None,
         err_pos: Any | None = None,
         y: Any | None = None,
@@ -934,15 +1065,29 @@ class Plot(anywidget.AnyWidget):
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        values_x = _to_float32_1d(x, arg_name="x")
+        if x is _UNSET:
+            if data is _UNSET:
+                raise TypeError("x data is required.")
+            if _is_dataframe_like(data):
+                raise ValueError("x column must be provided when the data argument is a dataframe.")
+            x_values = data
+        else:
+            x_values = _resolve_maybe_column(data, x, arg_name="x")
+        values_x = _to_float32_1d(x_values, arg_name="x")
         asymmetric = err_neg is not None or err_pos is not None
         if asymmetric:
             if err is not None:
                 raise ValueError("Use either err OR (err_neg, err_pos), not both.")
             if err_neg is None or err_pos is None:
                 raise ValueError("Both err_neg and err_pos are required for asymmetric error bars.")
-            values_err_neg = _to_float32_1d(err_neg, arg_name="err_neg")
-            values_err_pos = _to_float32_1d(err_pos, arg_name="err_pos")
+            values_err_neg = _to_float32_1d(
+                _resolve_maybe_column(data, err_neg, arg_name="err_neg"),
+                arg_name="err_neg",
+            )
+            values_err_pos = _to_float32_1d(
+                _resolve_maybe_column(data, err_pos, arg_name="err_pos"),
+                arg_name="err_pos",
+            )
             if values_x.size != values_err_neg.size or values_x.size != values_err_pos.size:
                 raise ValueError("x, err_neg, and err_pos must have the same length.")
             err_interleaved = np.empty(values_x.size * 2, dtype=np.float32)
@@ -952,12 +1097,13 @@ class Plot(anywidget.AnyWidget):
         else:
             if err is None:
                 raise ValueError("err is required for symmetric horizontal error bars.")
-            values_err = _to_float32_1d(err, arg_name="err")
+            values_err = _to_float32_1d(_resolve_maybe_column(data, err, arg_name="err"), arg_name="err")
             if values_x.size != values_err.size:
                 raise ValueError("x and err must have the same length.")
+        y_values = _resolve_maybe_column(data, y, arg_name="y") if y is not None else None
         values_y = (
-            _to_float32_1d(y, arg_name="y")
-            if y is not None
+            _to_float32_1d(y_values, arg_name="y")
+            if y_values is not None
             else np.arange(values_x.size, dtype=np.float32)
         )
         if values_x.size != values_y.size:
@@ -1044,15 +1190,16 @@ class Plot(anywidget.AnyWidget):
     def histogram(
         self,
         name: str,
-        y: Any,
+        data: Any = _UNSET,
         *,
+        y: Any = _UNSET,
         bins: int = 50,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        values = _to_float32_1d(y, arg_name="y")
+        values = _to_float32_1d(_resolve_y_input(data, y), arg_name="y")
         bin_count = int(bins)
         if bin_count <= 0:
             raise ValueError("bins must be > 0.")
@@ -1075,9 +1222,10 @@ class Plot(anywidget.AnyWidget):
     def histogram2d(
         self,
         name: str,
-        x: Any,
-        y: Any,
+        data: Any = _UNSET,
+        y: Any = _UNSET,
         *,
+        x: Any = _UNSET,
         x_bins: int = 64,
         y_bins: int = 64,
         label_fmt: str | None = "%.0f",
@@ -1093,8 +1241,19 @@ class Plot(anywidget.AnyWidget):
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        values_x = _to_float32_1d(x, arg_name="x")
-        values_y = _to_float32_1d(y, arg_name="y")
+        if x is _UNSET:
+            if data is _UNSET:
+                raise TypeError("x data is required.")
+            if _is_dataframe_like(data):
+                raise ValueError("x column must be provided when the data argument is a dataframe.")
+            x_values = data
+        else:
+            x_values = _resolve_maybe_column(data, x, arg_name="x")
+        if y is _UNSET:
+            raise TypeError("y data is required.")
+        y_values = _resolve_maybe_column(data, y, arg_name="y")
+        values_x = _to_float32_1d(x_values, arg_name="x")
+        values_y = _to_float32_1d(y_values, arg_name="y")
         if values_x.size != values_y.size:
             raise ValueError("x and y must have the same length.")
         x_bins_i = int(x_bins)
@@ -2369,15 +2528,23 @@ class Plot(anywidget.AnyWidget):
             self._closed = True
         super().close()
 
-    def _set_series_data(self, series_id: str, y: Any, *, x: Any | None = None) -> None:
+    def _set_series_data(
+        self,
+        series_id: str,
+        data: Any = _UNSET,
+        *,
+        x: Any | None = None,
+        y: Any = _UNSET,
+    ) -> None:
         self._ensure_open()
         meta = self._series.get(series_id)
         if meta is None:
             raise KeyError(f"Unknown series_id: {series_id}")
 
-        data = _to_float32_1d(y, arg_name="y")
-        if x is not None:
-            x_data = _to_line_x(x, y_len=int(data.size))
+        x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
+        data = _to_float32_1d(y_values, arg_name="y")
+        if x_values is not None:
+            x_data = _to_line_x(x_values, y_len=int(data.size))
         elif meta.x_data is not None:
             if int(data.size) != int(meta.x_data.size):
                 raise ValueError("x must be provided when resizing a custom-x line.")

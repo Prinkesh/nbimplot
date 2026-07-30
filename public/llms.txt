@@ -40,6 +40,15 @@ p.on_select(lambda plot, event: print(plot.indices_for_selection(event)))
 p.highlight_selection({"x_min": 0, "x_max": 1, "y_min": -1, "y_max": 1})
 ```
 
+Dataframe column inputs use the same API, not separate `*_df()` methods:
+```python
+p = ip.Plot(width=900, height=450, title="DataFrame Signal")
+h = p.line("mid", df, x="time", y="mid")
+p.scatter("fills", df, x="qty", y="price", size=2.0)
+p.histogram("returns", df, y="returns", bins=80)
+h.set_data(df_next, x="time", y="mid")
+```
+
 Notebook cell rendering:
 - `Plot`, `Subplots`, `AlignedPlots`, and `Dashboard` render as Jupyter widget MIME bundles when they are the final expression in a cell.
 - Use `p` as the last line for direct cell rendering.
@@ -67,6 +76,7 @@ const state = plot.getState({ includeData: true });
 Important constraints:
 - Requires WebGL2.
 - Strict WASM/ImPlot runtime, no JavaScript renderer fallback.
+- Python accepts NumPy arrays, Series, or dataframe-like objects with column names; after extraction, data still travels as binary `float32` buffers.
 - Line x-data must be finite, equal length with y, and sorted non-decreasing for LOD.
 - Streaming append supports implicit sample indices or explicit x chunks with `h.append(y_chunk, x=x_chunk)` / `h.append(yChunk, { x })`.
 - PNG export uses the existing WASM/ImPlot canvas: `p.export_png(...)`, `p.copy_png_to_clipboard()`, `plot.downloadPNG(...)`, `plot.toDataURL(...)`, `plot.toBlob(...)`, or `plot.copy_png_to_clipboard()`.

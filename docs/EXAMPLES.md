@@ -29,6 +29,37 @@ p
 Use `p.show()` when the cell continues after the display call. `Subplots`,
 `AlignedPlots`, and `Dashboard` support the same last-expression display path.
 
+## DataFrame Column Inputs
+
+Use the same API with arrays or dataframe columns. Any dataframe-like object with
+`.columns` and `__getitem__` works, including pandas and polars dataframes:
+
+```python
+import pandas as pd
+
+t = np.linspace(0, 20, 20_000, dtype=np.float32)
+y = np.sin(t).astype(np.float32)
+df = pd.DataFrame({
+    "time": t,
+    "signal": y,
+    "lower": y - 0.2,
+    "upper": y + 0.2,
+    "err": np.full_like(y, 0.1),
+})
+df_next = df.assign(signal=(0.8 * y).astype(np.float32))
+
+p = ip.Plot(width=1000, height=420, title="DataFrame Inputs")
+h = p.line("signal", df, x="time", y="signal")
+p.shaded("band", df, x="time", y1="lower", y2="upper")
+p.error_bars("err", df, x="time", y="signal", err="err")
+p
+
+h.set_data(df_next, x="time", y="signal")
+```
+
+The Python layer extracts columns, validates them, converts them to contiguous
+`float32`, and sends the same binary buffers as array inputs.
+
 ## Line and In-Place Updates
 
 ```python
@@ -108,6 +139,15 @@ p = ip.Plot(width=1100, height=420, title="Scatter + Bubbles")
 p.scatter("scatter", y, x=x, size=2.5)
 p.bubbles("bubbles", y, s, x=x)
 p.show()
+```
+
+Dataframe equivalent:
+
+```python
+p = ip.Plot(width=1100, height=420, title="Scatter + Bubbles")
+p.scatter("scatter", df, x="x", y="y", size=2.5)
+p.bubbles("bubbles", df, x="x", y="y", sizes="size")
+p
 ```
 
 ## Stairs / Stems / Digital
@@ -201,6 +241,15 @@ p2.histogram2d(
     colorbar_format="%g",
 )
 p2.show()
+```
+
+Dataframe equivalent:
+
+```python
+p = ip.Plot(width=1100, height=420, title="DataFrame Distributions")
+p.histogram("returns", df, y="returns", bins=80)
+p.histogram2d("density", df, x="x", y="y", x_bins=80, y_bins=60)
+p
 ```
 
 ## Heatmap and Colormap Controls

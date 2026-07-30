@@ -82,6 +82,31 @@ h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
 ```
 
+## Arrays Or DataFrame Columns
+
+The same methods accept NumPy arrays, pandas/polars Series, or dataframe-like
+objects with column selectors. There is no separate `*_df()` API:
+
+```python
+import pandas as pd
+
+df = pd.DataFrame({"time": x, "mid": y, "vwap": y2, "returns": returns})
+df_next = df.assign(mid=(0.8 * df["mid"]).astype("float32"))
+
+p = ip.Plot(width=900, height=450, title="DataFrame Columns")
+h = p.line("mid", df, x="time", y="mid")
+p.line("vwap", df, x="time", y="vwap")
+p.histogram("returns", df, y="returns", bins=80)
+p.show()
+
+h.set_data(df_next, x="time", y="mid")
+p.render()
+```
+
+Column extraction is a Python input-normalization step only. The frontend still
+receives contiguous `float32` binary buffers, and the WASM core still owns LOD
+and rendering.
+
 ## Notebook Cell Renderer
 
 `Plot`, `Subplots`, `AlignedPlots`, and `Dashboard` implement a Jupyter widget
@@ -206,6 +231,7 @@ Rules:
 
 - `x` and `y` must be 1D, finite, and equal length.
 - `x` must be sorted in non-decreasing order so the WASM LOD path can binary-search the visible range.
+- With a dataframe-like positional argument, `x="column"` and `y="column"` select columns; there is no separate dataframe API.
 - If a custom-x line keeps the same length, `h.set_data(y_new)` / `h.setData(yNew)` preserves the existing x buffer.
 - `x_axis` / `xAxis` selects the ImPlot axis slot (`x1`, `x2`, `x3`); it is not the x-data argument.
 - Streaming supports explicit x chunks: `h.append(y_chunk, x=x_chunk)` / `h.append(yChunk, { x: xChunk })`.

@@ -18,8 +18,8 @@ const quickstart = [
   "",
   "import nbimplot as ip",
   "p = ip.Plot(width=900, height=450, title=\"Signal\")",
-  "h = p.line(\"mid\", y, x=t)",
-  "h.set_data(y_new, x=t_new)",
+  "h = p.line(\"mid\", df, x=\"time\", y=\"mid\")",
+  "h.set_data(df_next, x=\"time\", y=\"mid\")",
   "p.show()",
 ];
 
@@ -70,7 +70,7 @@ const examples = [
     section: "Performance",
     title: "Million Point Line + Custom X + LOD",
     text: "Explicit x/y buffers, WASM min/max LOD, and callback-driven hover/click/selection inspection.",
-    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Line + LOD")\nh = p.line("signal", y, x=x)\np.on_hover(lambda plot, e: print(e["index"], e["x"], e["y"]))\np.on_select(lambda plot, e: plot.indices_for_selection(e, h))\np',
+    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Line + LOD")\nh = p.line("signal", df, x="time", y="signal")\np.on_hover(lambda plot, e: print(e["index"], e["x"], e["y"]))\np.on_select(lambda plot, e: plot.indices_for_selection(e, h))\np',
     code: 'const h = plot.line("signal", y, { x });\nplot.onHover(console.log);\nplot.onSelection((e) => plot.indicesForSelection(e, h));',
   },
   {
@@ -86,7 +86,7 @@ const examples = [
     section: "Points",
     title: "Scatter + Bubble Encodings",
     text: "Point-cloud rendering with explicit x/y data and bubble-size encodings for dense browser workflows.",
-    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Scatter + Bubbles")\np.scatter("samples", y, x=x, size=2.5)\np.bubbles("volume", y, sizes, x=x)\np',
+    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Scatter + Bubbles")\np.scatter("samples", df, x="x", y="y", size=2.5)\np.bubbles("volume", df, x="x", y="y", sizes="volume")\np',
     code: 'plot.scatter("samples", y, { x });\nplot.bubbles("volume", y, sizes, { x });',
   },
   {
@@ -110,7 +110,7 @@ const examples = [
     section: "Statistics",
     title: "Histogram + 2D Histogram",
     text: "1D and 2D distributions with colorbar-backed density inspection.",
-    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Distributions")\np.histogram("returns", values, bins=80)\np.histogram2d("density", x, y, x_bins=80, y_bins=60, show_colorbar=True)\np',
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Distributions")\np.histogram("returns", df, y="returns", bins=80)\np.histogram2d("density", df, x="x", y="y", x_bins=80, y_bins=60, show_colorbar=True)\np',
     code: 'plot.histogram("returns", values, { bins: 80 });\nplot.histogram2d("density", x, y, { xBins: 80, yBins: 60 });',
   },
   {

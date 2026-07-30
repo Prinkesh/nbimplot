@@ -97,6 +97,24 @@ h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
 ```
 
+Dataframe column inputs use the same API, not separate `*_df()` methods:
+
+```python
+p = ip.Plot(width=900, height=450, title="DataFrame Signal")
+h = p.line("mid", df, x="time", y="mid")
+p.line("vwap", df, x="time", y="vwap")
+p.scatter("fills", df, x="qty", y="price", size=2.0)
+p.bubbles("fills", df, x="qty", y="price", sizes="notional")
+p.histogram("returns", df, y="returns", bins=80)
+p.histogram2d("density", df, x="qty", y="price", x_bins=80, y_bins=60)
+h.set_data(df_next, x="time", y="mid")
+```
+
+Supported dataframe-like inputs only need `.columns` and `__getitem__`, so
+pandas and polars dataframes work without hard runtime dependencies. Column
+extraction happens in Python before validation; the frontend still receives
+contiguous binary `float32` buffers.
+
 Export the current notebook canvas:
 
 ```python
@@ -127,7 +145,9 @@ h.set_stream_options(auto_render=True, autoscale_y=False)
 
 Explicit x rules:
 - Use `p.line("name", y, x=x)`.
+- Or use a dataframe-like object: `p.line("name", df, x="x_column", y="y_column")`.
 - Use `h.set_data(y_new, x=x_new)` when replacing x and y together.
+- Or update from dataframe columns: `h.set_data(df_next, x="x_column", y="y_column")`.
 - `x` and `y` must be 1D numeric arrays, finite, equal length, and sorted non-decreasing by x.
 - `x_axis="x1"|"x2"|"x3"` selects an ImPlot axis slot. It is not the x-data argument.
 - Same-length `h.set_data(y_new)` preserves the existing custom x buffer.
