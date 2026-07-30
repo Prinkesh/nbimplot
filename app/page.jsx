@@ -109,6 +109,13 @@ const examples = [
     text: "Use the selector, slider, and buttons to verify that heatmaps and colorbar widgets use the active ImPlot colormap.",
     code: 'plot.setColormap("Plasma");\nplot.colormapSelector({ label: "Choose map" });\nplot.colormapSlider({ label: "Sample" });',
   },
+  {
+    id: "advanced-api-plot",
+    section: "Advanced API",
+    title: "View, Constraints, Axis Links, Raw Primitives",
+    text: "A focused API coverage example for view/perf callbacks, manual render scheduling, axis constraints/state/linking, aligned groups, time axes, and direct primitive access.",
+    code: 'plot.onViewChange(console.log);\nplot.setAxisLimitsConstraints("y1", -1.4, 1.4);\nplot.setAxisLink("x2", "x1");\nplot.primitive("tag_y", { value: 0.85 });',
+  },
 ];
 
 export default function Page() {

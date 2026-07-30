@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "check:examples": "python3 scripts/check_example_coverage.py",
     "build": "next build",
     "start": "next start"
   },

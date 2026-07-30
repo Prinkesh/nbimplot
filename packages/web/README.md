@@ -96,9 +96,14 @@ Core methods:
 - `handle.setData(y, { x })`
 - `handle.append(y)`
 - `plot.render()`
+- `plot.requestRender()` / `plot.draw()`
 - `plot.autoscale()`
 - `plot.setView(xMin, xMax, yMin, yMax)`
+- `plot.getView()`
+- `plot.getPerfStats()`
 - `plot.dispose()`
+- `plot.onViewChange(callback)`
+- `plot.onPerfStats(callback)`
 - `plot.onHover(callback)`
 - `plot.onClick(callback)`
 - `plot.onSelection(callback)` / `plot.onSelect(callback)`
@@ -157,6 +162,25 @@ plot.onSelection((event) => {
 Selection events include the ImPlot rectangle plus per-series x-index ranges from
 WASM. `indicesForSelection(...)` computes exact y-filtered indices only when
 called.
+
+## View, Axis, and Perf Controls
+
+```js
+plot.setPlotFlags({ noLegend: false, noMenus: false, noBoxSelect: false, crosshairs: true });
+plot.setSecondaryAxes({ x2: true, y2: true });
+plot.setTimeAxis("x1");
+plot.setAxisState("x2", { enabled: true, scale: "time" });
+plot.setAxisLink("x2", "x1");
+plot.setAxisLimitsConstraints("y1", -1.4, 1.4);
+plot.setAxisZoomConstraints("x1", 300, 10800);
+plot.setAlignedGroup("advanced-api", { enabled: true, vertical: true });
+
+plot.onViewChange((view) => console.log(view));
+plot.onPerfStats((stats) => console.log(stats.frameMs));
+console.log(plot.getView(), plot.getPerfStats());
+plot.requestRender();
+plot.draw();
+```
 
 For explicit x coordinates:
 

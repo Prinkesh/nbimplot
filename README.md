@@ -368,6 +368,7 @@ Search-focused guides:
 - `p.set_axis_limits_constraints(...)`, `p.set_axis_zoom_constraints(...)`, `p.set_axis_link(...)`
 - `p.hide_next_item()`
 - `p.on_perf_stats(callback, interval_ms=500)`
+- `p.on_view_change(callback)`
 - `p.on_tool_change(callback)`
 - `p.on_selection_change(callback)`
 - `p.on_select(callback)`

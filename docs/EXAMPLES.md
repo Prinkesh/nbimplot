@@ -265,6 +265,50 @@ p.set_view(1000, 5000, float(y.min()), float(y.max()))
 p.render()
 ```
 
+## Advanced API Controls
+
+```python
+advanced_view_events = []
+advanced_perf_events = []
+
+x = (np.arange(240, dtype=np.float32) * 60.0).astype(np.float32)
+y = (0.7 * np.sin(np.arange(240, dtype=np.float32) * 0.08)).astype(np.float32)
+y2 = (120 + 35 * np.sin(np.arange(240, dtype=np.float32) * 0.05)).astype(np.float32)
+
+p = ip.Plot(width=1100, height=520, title="Advanced API Controls")
+
+def on_view(plot, view):
+    advanced_view_events.append(view)
+
+def on_perf(plot, stats):
+    advanced_perf_events.append(stats)
+
+p.on_view_change(on_view)
+p.on_perf_stats(on_perf, interval_ms=500)
+p.set_plot_flags(no_legend=False, no_menus=False, no_box_select=False, crosshairs=True)
+p.set_subplots_config(rows=1, cols=2, flags=0)
+p.set_aligned_group("advanced-api", enabled=True, vertical=True)
+p.set_secondary_axes(x2=True, y2=True)
+p.set_time_axis("x1")
+p.set_axis_state("x2", enabled=True, scale="time")
+p.set_axis_state("y2", enabled=True, scale="linear")
+p.set_axis_link("x2", "x1")
+p.set_axis_limits_constraints("y1", -1.4, 1.4)
+p.set_axis_zoom_constraints("x1", 5 * 60, 180 * 60)
+p.set_axis_ticks("x1", np.array([0, 1800, 3600, 5400], dtype=np.float32),
+                 labels=["00:00", "00:30", "01:00", "01:30"], keep_default=False)
+p.clear_axis_ticks("x2")
+
+p.line("primary", y, x=x, subplot_index=0)
+p.line("secondary y2", y2, x=x, y_axis="y2", subplot_index=0)
+p.inf_lines("maintenance", np.array([3600, 7200], dtype=np.float32), axis="x", subplot_index=0)
+p.tag_y(0.85, label_fmt="tag_y wrapper", round_value=False, subplot_index=0)
+p.scatter("linked samples", y[::5], x=x[::5], subplot_index=1)
+p.set_view(0, 4 * 3600, -1.25, 1.25)
+p.render()
+p.show()
+```
+
 ## Subplots
 
 ```python
@@ -301,7 +345,11 @@ def on_tool(plot, payload):
 def on_sel(plot, payload):
     print("selection:", payload)
 
+def on_view(plot, view):
+    print("view:", view)
+
 p.on_perf_stats(on_perf, interval_ms=1000)
+p.on_view_change(on_view)
 p.on_tool_change(on_tool)
 p.on_selection_change(on_sel)
 p.show()

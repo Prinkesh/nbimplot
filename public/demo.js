@@ -74,6 +74,7 @@ const ids = [
   "subplots-plot",
   "drag-plot",
   "colormap-plot",
+  "advanced-api-plot",
 ];
 
 const mode = document.querySelector("#mode");
@@ -702,6 +703,111 @@ async function buildColormapWidgets() {
   return plot;
 }
 
+async function buildAdvancedApi() {
+  const n = 240;
+  const x = range(n, 60);
+  const primary = new Float32Array(n);
+  const secondary = new Float32Array(n);
+  for (let i = 0; i < n; i += 1) {
+    primary[i] = 0.7 * Math.sin(i * 0.08) + 0.25 * Math.cos(i * 0.017);
+    secondary[i] = 120 + 35 * Math.sin(i * 0.05) + 12 * Math.cos(i * 0.19);
+  }
+
+  const plot = await mountPlot("advanced-api-plot", {
+    title: "Advanced API Controls",
+    crosshairs: true,
+  });
+  plot.setPlotFlags({ noLegend: false, noMenus: false, noBoxSelect: false, crosshairs: true });
+  plot.setSubplots(1, 2, { linkAllX: true, shareItems: false });
+  plot.setAlignedGroup("advanced-api-demo", { enabled: true, vertical: true });
+  plot.setSecondaryAxes({ x2: true, y2: true });
+  plot.setTimeAxis("x1");
+  plot.setAxisState("x2", { enabled: true, scale: "time" });
+  plot.setAxisState("y2", { enabled: true, scale: "linear" });
+  plot.setAxisLink("x2", "x1");
+  plot.setAxisLimitsConstraints("y1", -1.4, 1.4);
+  plot.setAxisZoomConstraints("x1", 5 * 60, 180 * 60);
+  plot.setAxisLabel("x1", "time axis");
+  plot.setAxisLabel("x2", "linked time axis");
+  plot.setAxisLabel("y1", "signal");
+  plot.setAxisLabel("y2", "load");
+  plot.setAxisFormat("y1", "%.2f");
+  plot.setAxisFormat("y2", "%.0f");
+
+  const tickValues = new Float32Array([0, 1800, 3600, 5400, 7200, 9000, 10800, 12600]);
+  const tickLabels = ["00:00", "00:30", "01:00", "01:30", "02:00", "02:30", "03:00", "03:30"];
+  plot.setAxisTicks("x1", tickValues, { labels: tickLabels, keepDefault: false });
+  plot.setAxisTicks("x2", tickValues, { labels: tickLabels, keepDefault: false });
+  plot.clearAxisTicks("x2");
+
+  const handle = plot.line("primary", primary, {
+    x,
+    subplotIndex: 0,
+    color: "#1f6f66",
+    lineWeight: 2,
+  });
+  plot.line("secondary y2", secondary, {
+    x,
+    yAxis: "y2",
+    subplotIndex: 0,
+    color: "#b74b2b",
+    lineWeight: 1.6,
+  });
+  plot.infLines("maintenance windows", new Float32Array([3600, 7200, 10800]), {
+    axis: "x",
+    subplotIndex: 0,
+  });
+  plot.primitive("tag_y", {
+    value: 0.85,
+    labelFmt: "direct primitive",
+    roundValue: false,
+    subplotIndex: 0,
+  });
+
+  const coarse = new Float32Array(48);
+  const coarseX = new Float32Array(48);
+  for (let i = 0; i < coarse.length; i += 1) {
+    coarseX[i] = i * 5 * 60;
+    coarse[i] = primary[Math.min(primary.length - 1, i * 5)];
+  }
+  plot.scatter("linked samples", coarse, {
+    x: coarseX,
+    subplotIndex: 1,
+    marker: "diamond",
+    size: 4,
+  });
+  plot.line("linked trend", primary, {
+    x,
+    subplotIndex: 1,
+    color: "#3f5f8f",
+  });
+  plot.setView(0, 4 * 3600, -1.25, 1.25);
+
+  plot.onViewChange((view) => {
+    if (!interactionReadout) return;
+    interactionReadout.textContent = `View: x=[${view.xMin.toFixed(0)}, ${view.xMax.toFixed(0)}], y=[${view.yMin.toFixed(2)}, ${view.yMax.toFixed(2)}]`;
+  });
+  plot.onSelection((event) => {
+    if (!interactionReadout) return;
+    const exact = plot.selectionIndices(event, handle);
+    interactionReadout.textContent = `Advanced selection: ${exact.length.toLocaleString()} primary samples`;
+  });
+  plot.onPerfStats((stats) => {
+    if (!frameMs) return;
+    const current = plot.getPerfStats();
+    frameMs.textContent = `${stats.frameMs.toFixed(2)} ms | latest ${current.frameMs.toFixed(2)} ms`;
+  });
+
+  const view = plot.getView();
+  const perf = plot.getPerfStats();
+  if (interactionReadout && view && perf) {
+    interactionReadout.textContent = `Initial advanced view ready; draw=${Math.round(perf.drawPoints).toLocaleString()} points`;
+  }
+  plot.requestRender();
+  plot.draw();
+  return plot;
+}
+
 async function main() {
   const probe = probeWebGL2();
   if (!probe.available) {
@@ -725,6 +831,7 @@ async function main() {
     ["subplots-plot", buildSubplots],
     ["drag-plot", buildDrag],
     ["colormap-plot", buildColormapWidgets],
+    ["advanced-api-plot", buildAdvancedApi],
   ];
 
   state.totalExamples = builders.length;
