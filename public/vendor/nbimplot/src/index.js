@@ -1,6 +1,6 @@
-import createNbImPlotModule from "../wasm/nbimplot_wasm.js";
+import createNbImPlotModule from "../wasm/nbimplot_wasm.js?v=0.1.11";
 
-const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm", import.meta.url);
+const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm?v=0.1.11", import.meta.url);
 const LABEL_SEP = "\x1f";
 const PIE_FMT_SEP = "\x1e";
 const HEATMAP_META_SEP = "\x1d";

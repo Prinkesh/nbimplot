@@ -1,4 +1,4 @@
-import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js";
+import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=0.1.11";
 
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
