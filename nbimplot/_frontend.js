@@ -152,6 +152,17 @@ const globalWasmAssets = {
   jsSource: "",
   wasmBinary: null,
 };
+const linkedCrosshairGroups = new Map();
+
+function linkedCrosshairGroup(groupId) {
+  const key = String(groupId || "default");
+  let group = linkedCrosshairGroups.get(key);
+  if (!group) {
+    group = new Set();
+    linkedCrosshairGroups.set(key, group);
+  }
+  return group;
+}
 
 async function loadWasmModule(wasmJsSource, wasmBinary) {
   if (
@@ -1033,6 +1044,15 @@ class PlotRuntime {
       enabled: false,
       vertical: true,
     };
+    this.themeName = "";
+    this.linkedCrosshair = {
+      enabled: false,
+      groupId: "",
+      axis: "x",
+    };
+    this.linkedCrosshairTokenBase =
+      0x70000000 + ((Math.random() * 0x0fffffff) >>> 0);
+    this.linkedCrosshairVisible = false;
     this.perfReportingEnabled = false;
     this.perfReportingIntervalMs = 500;
     this.perfState = {
@@ -1454,6 +1474,86 @@ class PlotRuntime {
     return true;
   }
 
+  _linkedCrosshairToken(subplotIndex, axis) {
+    const offset = Math.max(0, Number(subplotIndex) | 0) * 2 + (axis === "y" ? 1 : 0);
+    return (this.linkedCrosshairTokenBase + offset) >>> 0;
+  }
+
+  _syncLinkedCrosshairPrimitive(axis, value, subplotIndex) {
+    if (!this.wasmReady || !Number.isFinite(Number(value))) {
+      return;
+    }
+    const isY = axis === "y";
+    const token = this._linkedCrosshairToken(subplotIndex, axis);
+    const ints = [0, 0, 0, 1, 0, 3, 0, Math.max(0, Number(subplotIndex) | 0)];
+    const floats = [0, 0, 0, 0, 0, 0, 1.4, 0];
+    if (isY) {
+      floats[5] = Number(value);
+    } else {
+      floats[4] = Number(value);
+    }
+    this.wasm.upsertPrimitive(token, PRIMITIVE_KIND_CODES[isY ? "drag_line_y" : "drag_line_x"], {
+      data0: new Float32Array(0),
+      data1: new Float32Array(0),
+      data2: new Float32Array(0),
+      ints,
+      floats,
+      text: isY ? "linked-y" : "linked-x",
+    });
+    this.wasm.setPrimitiveVisible(token, true);
+  }
+
+  _receiveLinkedCrosshair(event) {
+    if (!this.linkedCrosshair.enabled || !this.wasmReady || !event) {
+      this._hideLinkedCrosshair();
+      return;
+    }
+    const count = Math.max(1, this.subplotConfig.rows * this.subplotConfig.cols);
+    const wantsX = this.linkedCrosshair.axis === "x" || this.linkedCrosshair.axis === "xy";
+    const wantsY = this.linkedCrosshair.axis === "y" || this.linkedCrosshair.axis === "xy";
+    for (let subplotIndex = 0; subplotIndex < count; subplotIndex += 1) {
+      if (wantsX && Number.isFinite(event.x)) {
+        this._syncLinkedCrosshairPrimitive("x", event.x, subplotIndex);
+      } else {
+        this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "x"), false);
+      }
+      if (wantsY && Number.isFinite(event.y)) {
+        this._syncLinkedCrosshairPrimitive("y", event.y, subplotIndex);
+      } else {
+        this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "y"), false);
+      }
+    }
+    this.linkedCrosshairVisible = true;
+    this._markDirty();
+  }
+
+  _hideLinkedCrosshair() {
+    if (!this.wasmReady || !this.linkedCrosshairVisible) {
+      return;
+    }
+    const count = Math.max(1, this.subplotConfig.rows * this.subplotConfig.cols);
+    for (let subplotIndex = 0; subplotIndex < count; subplotIndex += 1) {
+      this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "x"), false);
+      this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "y"), false);
+    }
+    this.linkedCrosshairVisible = false;
+    this._markDirty();
+  }
+
+  _broadcastLinkedCrosshair(hover) {
+    if (!this.linkedCrosshair.enabled || !this.linkedCrosshair.groupId) {
+      return;
+    }
+    const group = linkedCrosshairGroups.get(this.linkedCrosshair.groupId);
+    if (!group) {
+      return;
+    }
+    const event = hover && hover.active ? { x: Number(hover.x), y: Number(hover.y) } : null;
+    for (const runtime of group) {
+      runtime._receiveLinkedCrosshair(event);
+    }
+  }
+
   _syncImPlotPreference() {
     if (!this.wasmReady) {
       return false;
@@ -1864,6 +1964,12 @@ class PlotRuntime {
       case "colormap":
         this._handleColormapMessage(content);
         break;
+      case "theme":
+        this._handleThemeMessage(content);
+        break;
+      case "linked_crosshair":
+        this._handleLinkedCrosshairMessage(content);
+        break;
       case "autoscale":
         this._autoscale();
         break;
@@ -1878,6 +1984,9 @@ class PlotRuntime {
         break;
       case "export_png":
         this._exportPng(content);
+        break;
+      case "copy_png_to_clipboard":
+        this._copyPngToClipboard();
         break;
       case "set_perf_reporting":
         this._handleSetPerfReportingMessage(content);
@@ -2251,6 +2360,36 @@ class PlotRuntime {
       this._syncColormapToWasm();
     }
     this._markDirty();
+  }
+
+  _handleThemeMessage(content) {
+    this.themeName = content.name === undefined || content.name === null ? "" : String(content.name);
+    if (this.wrapper) {
+      this.wrapper.dataset.nbimplotTheme = this.themeName || "nbimplot";
+    }
+    this._markDirty();
+  }
+
+  _handleLinkedCrosshairMessage(content) {
+    const previousGroup = this.linkedCrosshair.groupId;
+    if (previousGroup) {
+      const prev = linkedCrosshairGroups.get(previousGroup);
+      if (prev) {
+        prev.delete(this);
+        if (prev.size === 0) linkedCrosshairGroups.delete(previousGroup);
+      }
+    }
+    const axis = String(content.axis || "x").toLowerCase();
+    this.linkedCrosshair = {
+      enabled: Boolean(content.enabled),
+      groupId: String(content.group_id || "default"),
+      axis: axis === "y" || axis === "xy" ? axis : "x",
+    };
+    if (this.linkedCrosshair.enabled) {
+      linkedCrosshairGroup(this.linkedCrosshair.groupId).add(this);
+    } else {
+      this._hideLinkedCrosshair();
+    }
   }
 
   _handleAxisStateMessage(content) {
@@ -2803,6 +2942,7 @@ class PlotRuntime {
     const tuples = this.wasm.getInteractions();
     if (!(tuples instanceof Float32Array) || tuples.length === 0) {
       this.lastInteractionHash = "";
+      this._broadcastLinkedCrosshair(null);
       return;
     }
 
@@ -2933,6 +3073,8 @@ class PlotRuntime {
       );
     }
 
+    this._broadcastLinkedCrosshair(hover);
+
     if (tools.length === 0 && selection == null && hover == null && click == null) {
       this.lastInteractionHash = "";
       return;
@@ -3014,9 +3156,9 @@ class PlotRuntime {
 
   }
 
-  _exportPng(content) {
+  _capturePngBlob() {
     if (this.disposed) {
-      return;
+      return Promise.reject(new Error("Plot runtime is disposed."));
     }
     if (this.wasmReady) {
       this._flushInputFrame();
@@ -3030,12 +3172,15 @@ class PlotRuntime {
     composite.height = Math.max(1, this.canvas.height);
     const ctx = composite.getContext("2d");
     if (!ctx) {
-      return;
+      return Promise.reject(new Error("Failed to create PNG composite canvas."));
     }
     ctx.drawImage(this.canvas, 0, 0);
     ctx.drawImage(this.overlay, 0, 0);
+    return canvasToBlob(composite, "image/png");
+  }
 
-    canvasToBlob(composite, "image/png")
+  _exportPng(content) {
+    this._capturePngBlob()
       .then((blob) => {
         const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
@@ -3049,6 +3194,18 @@ class PlotRuntime {
       })
       .catch((error) => {
         console.warn("Failed to export nbimplot PNG", error);
+      });
+  }
+
+  _copyPngToClipboard() {
+    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+      console.warn("Clipboard PNG copy is not available in this browser.");
+      return;
+    }
+    this._capturePngBlob()
+      .then((blob) => navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]))
+      .catch((error) => {
+        console.warn("Failed to copy nbimplot PNG to clipboard", error);
       });
   }
 
@@ -4517,6 +4674,13 @@ class PlotRuntime {
     if (this.implotEnableRetryTimer !== 0) {
       window.clearTimeout(this.implotEnableRetryTimer);
       this.implotEnableRetryTimer = 0;
+    }
+    if (this.linkedCrosshair.groupId) {
+      const group = linkedCrosshairGroups.get(this.linkedCrosshair.groupId);
+      if (group) {
+        group.delete(this);
+        if (group.size === 0) linkedCrosshairGroups.delete(this.linkedCrosshair.groupId);
+      }
     }
 
     this.model.off("change:width", this.onWidthChange);

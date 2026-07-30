@@ -53,7 +53,7 @@ python -m pip install -U nbimplot
 Minimum recommended widget/runtime stack:
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.12" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.13" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 ```
 
 ## Compatibility
@@ -193,7 +193,7 @@ Rules:
 - `x` must be sorted in non-decreasing order so the WASM LOD path can binary-search the visible range.
 - If a custom-x line keeps the same length, `h.set_data(y_new)` / `h.setData(yNew)` preserves the existing x buffer.
 - `x_axis` / `xAxis` selects the ImPlot axis slot (`x1`, `x2`, `x3`); it is not the x-data argument.
-- Streaming append uses implicit sample indices. For custom x streaming, update with `set_data(y, x=x)` / `setData(y, { x })`.
+- Streaming supports explicit x chunks: `h.append(y_chunk, x=x_chunk)` / `h.append(yChunk, { x: xChunk })`.
 
 ## PNG Export
 
@@ -201,6 +201,7 @@ Notebook widgets can request a browser-side PNG download of the current canvas:
 
 ```python
 p.export_png("nbimplot-signal.png")
+p.copy_png_to_clipboard()
 ```
 
 Web apps can download directly or keep the image for app-specific workflows:
@@ -209,6 +210,7 @@ Web apps can download directly or keep the image for app-specific workflows:
 await plot.downloadPNG("nbimplot-signal.png");
 const dataUrl = plot.toDataURL("image/png");
 const blob = await plot.toBlob("image/png");
+await plot.copy_png_to_clipboard();
 ```
 
 Export redraws the existing WASM/ImPlot canvas immediately before reading pixels;
@@ -233,6 +235,15 @@ def on_select(plot, event):
 p.on_hover(on_hover)
 p.on_click(on_click)
 p.on_select(on_select)
+```
+
+Selection helper workflow:
+
+```python
+bounds = p.selection_bounds(selected["event"])
+indices = p.indices_for_selection(selected["event"], series="signal")
+p.highlight_selection(selected["event"], series="signal", name="picked")
+csv_text = p.export_csv_selection(selected["event"], series="signal")
 ```
 
 Selection callbacks include the ImPlot selection rectangle and per-series x-index
@@ -350,6 +361,35 @@ sp.subplot(1, 1).histogram("hist", np.random.randn(20_000).astype(np.float32), b
 sp.show()
 ```
 
+### 5) Dashboard, State, Theme, and Linked Crosshair
+
+```python
+t = np.linspace(0, 30, 4000, dtype=np.float32)
+dash = ip.Dashboard(2, 2, title="Realtime Desk", link_x=True, theme="nbimplot")
+dash.set_linked_crosshair("desk", axis="x")
+dash.subplot(0, 0).line("a", np.sin(t), x=t)
+dash.subplot(0, 1).line("b", np.cos(t), x=t)
+dash.show()
+
+state = dash.get_state(include_data=True)
+json_text = dash.export_json_state(include_data=True)
+dash.set_state(state)
+dash.set_theme("notebook")
+dash.export_csv_selection({"x_min": 0, "x_max": 1, "y_min": -1, "y_max": 1})
+dash.copy_png_to_clipboard()
+```
+
+```js
+plot.setTheme("nbimplot");
+plot.setLinkedCrosshair("desk", { axis: "x" });
+const bounds = plot.selectionBounds(selection);
+plot.highlightSelection(selection, handle, { name: "picked" });
+const csv = plot.exportCSVSelection(selection, handle);
+const state = plot.getState({ includeData: true });
+plot.setState(state);
+const json = plot.exportJSONState({ includeData: true });
+```
+
 ## Plot and Primitive Coverage
 
 Implemented plot/primitive APIs include:
@@ -394,7 +434,15 @@ Search-focused guides:
 - `p.on_hover(callback)`
 - `p.on_click(callback)`
 - `p.indices_for_selection(selection, series=None)`
+- `p.selection_bounds(selection)`
+- `p.highlight_selection(selection, series=None)`
+- `p.export_csv_selection(selection, series=None)`
+- `p.get_state(include_data=False)` / `p.set_state(state)`
+- `p.export_json_state(include_data=False)`
+- `p.set_theme("nbimplot")`
+- `p.set_linked_crosshair("group", axis="x|y|xy")`
 - `p.export_png(filename="nbimplot.png")`
+- `p.copy_png_to_clipboard()`
 
 ## Example Notebooks
 
@@ -414,7 +462,7 @@ Open the Colab notebook directly:
 This is usually a server-kernel env mismatch or stale lab assets.
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.12" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.13" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 jupyter lab clean
 ```
 

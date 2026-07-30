@@ -363,3 +363,57 @@ p.on_tool_change(on_tool)
 p.on_selection_change(on_sel)
 p.show()
 ```
+
+## State, Dashboard, Linked Crosshair, Selection Export
+
+```python
+t = np.linspace(0, 20, 4000, dtype=np.float32)
+y = (np.sin(t) + 0.2 * np.sin(7 * t)).astype(np.float32)
+
+p = ip.Plot(width=1100, height=360, title="State + Selection Helpers")
+p.set_theme("nbimplot")
+p.set_colormap("Viridis")
+h = p.line("signal", y, x=t)
+p.set_linked_crosshair("examples", axis="x")
+p.show()
+
+selection = {"x_min": 4.0, "x_max": 7.5, "y_min": -1.2, "y_max": 1.2, "subplot_index": 0}
+print(p.selection_bounds(selection))
+print(p.indices_for_selection(selection, h).size)
+p.highlight_selection(selection, h, name="picked")
+print(p.export_csv_selection(selection, h).splitlines()[:3])
+state = p.get_state(include_data=True)
+text = p.export_json_state(include_data=True)
+p.set_state(state)
+p.copy_png_to_clipboard()
+```
+
+```python
+dash = ip.Dashboard(2, 2, title="Linked Dashboard", width=1100, height=650, link_x=True)
+dash.set_theme("notebook")
+dash.set_linked_crosshair("dashboard", axis="xy")
+dash.subplot(0, 0).line("sin", np.sin(t).astype(np.float32), x=t)
+dash.subplot(0, 1).line("cos", np.cos(t).astype(np.float32), x=t)
+dash.subplot(1, 0).scatter("noise", np.random.randn(1500).astype(np.float32), size=2)
+dash.subplot(1, 1).heatmap("matrix", np.random.randn(48, 64).astype(np.float32), label_fmt="", show_colorbar=True)
+dash.show()
+```
+
+## Explicit-X Streaming Controls
+
+```python
+x0 = np.arange(256, dtype=np.float32)
+y0 = np.sin(x0 * 0.05).astype(np.float32)
+stream = ip.Plot(width=1100, height=320, title="Explicit-X Streaming")
+h = stream.stream_line("ticks", capacity=5000, initial=y0, initial_x=x0, auto_render=True)
+stream.show()
+
+x1 = np.arange(256, 512, dtype=np.float32)
+y1 = (np.sin(x1 * 0.05) + 0.15 * np.cos(x1 * 0.13)).astype(np.float32)
+h.append(y1, x=x1)
+h.pause()
+h.resume()
+h.set_window(3000)
+h.set_stream_options(auto_render=True, autoscale_y=False)
+stream.render()
+```

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import inspect
 import itertools
+import json
 import pathlib
 from typing import Any, Callable
 
@@ -88,6 +90,9 @@ class _SeriesMeta:
     marker_size: float = 4.0
     hidden: bool = False
     stream_capacity: int | None = None
+    stream_paused: bool = False
+    stream_auto_render: bool = False
+    stream_autoscale_y: bool = False
 
 
 @dataclass(slots=True)
@@ -264,11 +269,16 @@ class LineHandle:
         name: str,
         *,
         stream_capacity: int | None = None,
+        auto_render: bool = False,
+        autoscale_y: bool = False,
     ) -> None:
         self._plot = plot
         self._series_id = series_id
         self._name = name
         self._stream_capacity = stream_capacity
+        self._paused = False
+        self._auto_render = bool(auto_render)
+        self._autoscale_y = bool(autoscale_y)
 
     @property
     def series_id(self) -> str:
@@ -281,9 +291,50 @@ class LineHandle:
     def set_data(self, y: Any, *, x: Any | None = None) -> None:
         self._plot._set_series_data(self._series_id, y, x=x)
 
-    def append(self, y: Any, *, max_points: int | None = None) -> None:
+    def append(self, y: Any, *, x: Any | None = None, max_points: int | None = None) -> None:
+        if self._paused:
+            return None
         cap = self._stream_capacity if max_points is None else max_points
-        self._plot._append_series_data(self._series_id, y, max_points=cap)
+        self._plot._append_series_data(self._series_id, y, x=x, max_points=cap)
+        if self._autoscale_y:
+            self._plot.autoscale()
+        elif self._auto_render:
+            self._plot.render()
+        return None
+
+    def pause(self) -> None:
+        self._paused = True
+        self._plot._set_stream_paused(self._series_id, True)
+
+    def resume(self) -> None:
+        self._paused = False
+        self._plot._set_stream_paused(self._series_id, False)
+
+    def clear(self, *, x0: float = 0.0, y0: float = 0.0) -> None:
+        self._plot._clear_series_data(self._series_id, x0=x0, y0=y0)
+
+    def set_window(self, capacity: int) -> None:
+        cap = int(capacity)
+        if cap <= 0:
+            raise ValueError("capacity must be > 0.")
+        self._stream_capacity = cap
+        self._plot._set_stream_capacity(self._series_id, cap)
+
+    def set_stream_options(
+        self,
+        *,
+        auto_render: bool | None = None,
+        autoscale_y: bool | None = None,
+    ) -> None:
+        if auto_render is not None:
+            self._auto_render = bool(auto_render)
+        if autoscale_y is not None:
+            self._autoscale_y = bool(autoscale_y)
+        self._plot._set_stream_options(
+            self._series_id,
+            auto_render=self._auto_render,
+            autoscale_y=self._autoscale_y,
+        )
 
     def set_style(
         self,
@@ -383,6 +434,13 @@ class Plot(anywidget.AnyWidget):
         self._aligned_group_id = ""
         self._aligned_vertical = True
         self._aligned_enabled = False
+        self._linked_crosshair: dict[str, Any] = {
+            "enabled": False,
+            "group_id": "",
+            "axis": "x",
+        }
+        self._theme_name = ""
+        self._last_view: dict[str, float] | None = None
         self._hide_next_item = False
         self._closed = False
         self.set_plot_flags(
@@ -497,6 +555,7 @@ class Plot(anywidget.AnyWidget):
         *,
         capacity: int,
         initial: Any | None = None,
+        initial_x: Any | None = None,
         subplot_index: int = 0,
         x_axis: str = "x1",
         y_axis: str = "y1",
@@ -504,6 +563,8 @@ class Plot(anywidget.AnyWidget):
         line_weight: float = 1.0,
         marker: str = "none",
         marker_size: float = 4.0,
+        auto_render: bool = False,
+        autoscale_y: bool = False,
     ) -> LineHandle:
         cap = int(capacity)
         if cap <= 0:
@@ -512,9 +573,10 @@ class Plot(anywidget.AnyWidget):
             initial_data = np.zeros(1, dtype=np.float32)
         else:
             initial_data = _to_float32_1d(initial, arg_name="initial")
-        return self.line(
+        handle = self.line(
             name,
             initial_data,
+            x=initial_x,
             subplot_index=subplot_index,
             x_axis=x_axis,
             y_axis=y_axis,
@@ -524,6 +586,8 @@ class Plot(anywidget.AnyWidget):
             marker_size=marker_size,
             max_points=cap,
         )
+        handle.set_stream_options(auto_render=auto_render, autoscale_y=autoscale_y)
+        return handle
 
     def scatter(
         self,
@@ -1564,6 +1628,12 @@ class Plot(anywidget.AnyWidget):
             raise ValueError("x_max must be greater than x_min.")
         if y_max_v <= y_min_v:
             raise ValueError("y_max must be greater than y_min.")
+        self._last_view = {
+            "x_min": x_min_v,
+            "x_max": x_max_v,
+            "y_min": y_min_v,
+            "y_max": y_max_v,
+        }
         self.send(
             {
                 "type": "set_view",
@@ -1906,17 +1976,6 @@ class Plot(anywidget.AnyWidget):
         x0, x1 = sorted((x_min, x_max))
         y0, y1 = sorted((y_min, y_max))
 
-        def _resolve_series_id(value: str | LineHandle) -> str:
-            if isinstance(value, LineHandle):
-                return value.series_id
-            raw = str(value)
-            if raw in self._series:
-                return raw
-            for sid, meta in self._series.items():
-                if meta.name == raw:
-                    return sid
-            raise KeyError(f"Unknown series: {raw!r}")
-
         def _indices_for_meta(meta: _SeriesMeta) -> np.ndarray:
             y = meta.data
             if y.size == 0:
@@ -1948,10 +2007,311 @@ class Plot(anywidget.AnyWidget):
             return (np.nonzero(mask)[0] + start).astype(np.int64, copy=False)
 
         if series is not None:
-            return _indices_for_meta(self._series[_resolve_series_id(series)])
+            return _indices_for_meta(self._series[self._resolve_series_id(series)])
         return {sid: _indices_for_meta(meta) for sid, meta in self._series.items()}
 
     selection_indices = indices_for_selection
+
+    def selection_bounds(self, selection: dict[str, Any]) -> tuple[float, float, float, float]:
+        if not isinstance(selection, dict):
+            raise TypeError("selection must be the dict passed to on_select/on_selection_change.")
+        try:
+            x0, x1 = sorted((float(selection["x_min"]), float(selection["x_max"])))
+            y0, y1 = sorted((float(selection["y_min"]), float(selection["y_max"])))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("selection must contain finite x_min/x_max/y_min/y_max values.") from exc
+        if not np.isfinite([x0, x1, y0, y1]).all():
+            raise ValueError("selection bounds must be finite.")
+        return x0, x1, y0, y1
+
+    def highlight_selection(
+        self,
+        selection: dict[str, Any],
+        series: str | LineHandle | None = None,
+        *,
+        name: str = "selection",
+        points: bool = True,
+        rect: bool = True,
+    ) -> None:
+        x0, x1, y0, y1 = self.selection_bounds(selection)
+        subplot_index = int(selection.get("subplot_index", 0))
+        if rect:
+            self.drag_rect(name, x0, y0, x1, y1, subplot_index=subplot_index)
+        if not points:
+            return
+        selected = self.indices_for_selection(selection, series)
+        items = selected.items() if isinstance(selected, dict) else [(series, selected)]
+        for key, indices in items:
+            if indices.size == 0:
+                continue
+            if isinstance(key, LineHandle):
+                series_id = key.series_id
+            elif isinstance(key, str):
+                series_id = self._resolve_series_id(key)
+            else:
+                series_id = ""
+                if series is not None:
+                    series_id = self._resolve_series_id(series)
+            meta = self._series.get(series_id)
+            if meta is None:
+                continue
+            idx = np.asarray(indices, dtype=np.int64)
+            y_vals = np.ascontiguousarray(meta.data[idx], dtype=np.float32)
+            x_vals = (
+                np.ascontiguousarray(meta.x_data[idx], dtype=np.float32)
+                if meta.x_data is not None
+                else np.ascontiguousarray(idx.astype(np.float32), dtype=np.float32)
+            )
+            label = f"{name}:{meta.name}"
+            self.scatter(label, y_vals, x=x_vals, size=5.0, subplot_index=meta.subplot_index)
+
+    def export_csv_selection(
+        self,
+        selection: dict[str, Any],
+        series: str | LineHandle | None = None,
+        *,
+        filename: str | pathlib.Path | None = None,
+    ) -> str:
+        selected = self.indices_for_selection(selection, series)
+        rows = ["series_id,series_name,index,x,y"]
+        items = selected.items() if isinstance(selected, dict) else [(series, selected)]
+        for key, indices in items:
+            if isinstance(key, LineHandle):
+                series_id = key.series_id
+            elif isinstance(key, str):
+                series_id = self._resolve_series_id(key)
+            elif isinstance(series, LineHandle):
+                series_id = series.series_id
+            elif isinstance(series, str):
+                series_id = self._resolve_series_id(series)
+            else:
+                series_id = str(key or "")
+            meta = self._series.get(series_id)
+            if meta is None:
+                continue
+            for raw_idx in np.asarray(indices, dtype=np.int64):
+                idx = int(raw_idx)
+                x_val = float(meta.x_data[idx]) if meta.x_data is not None else float(idx)
+                y_val = float(meta.data[idx])
+                rows.append(f"{series_id},{meta.name},{idx},{x_val:.9g},{y_val:.9g}")
+        csv_text = "\n".join(rows) + "\n"
+        if filename is not None:
+            pathlib.Path(filename).write_text(csv_text, encoding="utf-8")
+        return csv_text
+
+    def get_state(
+        self,
+        key: Any = _UNSET,
+        drop_defaults: bool = False,
+        *,
+        include_data: bool = False,
+    ) -> dict[str, Any]:
+        if (
+            key is not _UNSET
+            or drop_defaults
+            or not hasattr(self, "_plot_flags")
+            or self._called_from_widget_state()
+        ):
+            kwargs: dict[str, Any] = {"drop_defaults": drop_defaults}
+            if key is not _UNSET:
+                kwargs["key"] = key
+            return super().get_state(**kwargs)
+        state: dict[str, Any] = {
+            "version": 1,
+            "width": int(self.width),
+            "height": int(self.height),
+            "title": str(self.title),
+            "plot_flags": int(self._plot_flags),
+            "axis_scale_x": self._scale_name(self._axis_scale_x),
+            "axis_scale_y": self._scale_name(self._axis_scale_y),
+            "colormap": self._colormap_name,
+            "theme": self._theme_name,
+            "view": dict(self._last_view) if self._last_view is not None else None,
+            "subplots": {
+                "rows": int(self._subplot_rows),
+                "cols": int(self._subplot_cols),
+                "flags": int(self._subplot_flags),
+            },
+            "aligned_group": {
+                "group_id": self._aligned_group_id,
+                "enabled": bool(self._aligned_enabled),
+                "vertical": bool(self._aligned_vertical),
+            },
+            "linked_crosshair": dict(self._linked_crosshair),
+            "axis_state": {
+                str(axis): {"enabled": bool(enabled), "scale": self._scale_name(scale)}
+                for axis, (enabled, scale) in self._axis_state.items()
+            },
+            "axis_labels": {str(k): v for k, v in self._axis_labels.items()},
+            "axis_formats": {str(k): v for k, v in self._axis_formats.items()},
+            "axis_links": {str(k): v for k, v in self._axis_links.items()},
+            "series": [],
+        }
+        for series_id, meta in self._series.items():
+            item: dict[str, Any] = {
+                "series_id": series_id,
+                "name": meta.name,
+                "subplot_index": int(meta.subplot_index),
+                "x_axis": int(meta.x_axis),
+                "y_axis": int(meta.y_axis),
+                "style": self._series_style_payload(meta),
+                "hidden": bool(meta.hidden),
+                "stream_capacity": meta.stream_capacity,
+                "stream_paused": bool(meta.stream_paused),
+                "stream_auto_render": bool(meta.stream_auto_render),
+                "stream_autoscale_y": bool(meta.stream_autoscale_y),
+                "has_x": meta.x_data is not None,
+            }
+            if include_data:
+                item["y"] = meta.data.tolist()
+                if meta.x_data is not None:
+                    item["x"] = meta.x_data.tolist()
+            state["series"].append(item)
+        return state
+
+    @staticmethod
+    def _called_from_widget_state() -> bool:
+        for frame in inspect.stack(context=0)[1:6]:
+            if "ipywidgets" in frame.filename and frame.function in {
+                "open",
+                "send_state",
+                "get_manager_state",
+            }:
+                return True
+        return False
+
+    def set_state(self, state: dict[str, Any]) -> None:
+        if not isinstance(state, dict):
+            raise TypeError("state must be a dict returned by get_state().")
+        if "width" in state:
+            self.width = int(state["width"])
+        if "height" in state:
+            self.height = int(state["height"])
+        if "title" in state:
+            self.title = str(state["title"])
+        subplots = state.get("subplots")
+        if isinstance(subplots, dict):
+            self.set_subplots_config(
+                rows=int(subplots.get("rows", self._subplot_rows)),
+                cols=int(subplots.get("cols", self._subplot_cols)),
+                flags=int(subplots.get("flags", self._subplot_flags)),
+            )
+        if "plot_flags" in state:
+            self._plot_flags = int(state["plot_flags"])
+            self.send(
+                {
+                    "type": "plot_options",
+                    "plot_flags": int(self._plot_flags),
+                    "axis_scale_x": int(self._axis_scale_x),
+                    "axis_scale_y": int(self._axis_scale_y),
+                }
+            )
+        if "axis_scale_x" in state or "axis_scale_y" in state:
+            self.set_axis_scale(
+                x=str(state.get("axis_scale_x", self._scale_name(self._axis_scale_x))),
+                y=str(state.get("axis_scale_y", self._scale_name(self._axis_scale_y))),
+            )
+        for axis, cfg in (state.get("axis_state") or {}).items():
+            if isinstance(cfg, dict):
+                self.set_axis_state(
+                    self._axis_name(int(axis)),
+                    enabled=bool(cfg.get("enabled", True)),
+                    scale=str(cfg.get("scale", "linear")),
+                )
+        for axis, label in (state.get("axis_labels") or {}).items():
+            self.set_axis_label(self._axis_name(int(axis)), str(label))
+        for axis, fmt in (state.get("axis_formats") or {}).items():
+            self.set_axis_format(self._axis_name(int(axis)), str(fmt))
+        for axis, target in (state.get("axis_links") or {}).items():
+            self.set_axis_link(self._axis_name(int(axis)), self._axis_name(int(target)))
+        aligned = state.get("aligned_group")
+        if isinstance(aligned, dict):
+            self.set_aligned_group(
+                str(aligned.get("group_id", "")),
+                enabled=bool(aligned.get("enabled", False)),
+                vertical=bool(aligned.get("vertical", True)),
+            )
+        if state.get("theme"):
+            self.set_theme(str(state.get("theme")))
+        if "colormap" in state:
+            self.set_colormap(state.get("colormap"))
+        linked = state.get("linked_crosshair")
+        if isinstance(linked, dict):
+            self.set_linked_crosshair(
+                str(linked.get("group_id", "default")),
+                enabled=bool(linked.get("enabled", False)),
+                axis=str(linked.get("axis", "x")),
+            )
+        view = state.get("view")
+        if isinstance(view, dict):
+            self.set_view(float(view["x_min"]), float(view["x_max"]), float(view["y_min"]), float(view["y_max"]))
+        for item in state.get("series", []):
+            if not isinstance(item, dict) or "y" not in item:
+                continue
+            style = item.get("style") or {}
+            handle = self.line(
+                str(item.get("name", "series")),
+                item["y"],
+                x=item.get("x"),
+                subplot_index=int(item.get("subplot_index", 0)),
+                x_axis=self._axis_name(int(item.get("x_axis", 0))),
+                y_axis=self._axis_name(int(item.get("y_axis", 3))),
+                color=(
+                    style.get("color_r", 0.0),
+                    style.get("color_g", 0.0),
+                    style.get("color_b", 0.0),
+                    style.get("color_a", 0.0),
+                )
+                if style.get("has_color")
+                else None,
+                line_weight=float(style.get("line_weight", 1.0)),
+                marker=self._marker_name(int(style.get("marker", _SERIES_MARKER_NONE))),
+                marker_size=float(style.get("marker_size", 4.0)),
+                max_points=item.get("stream_capacity"),
+            )
+            handle.set_stream_options(
+                auto_render=bool(item.get("stream_auto_render", False)),
+                autoscale_y=bool(item.get("stream_autoscale_y", False)),
+            )
+            if item.get("stream_paused"):
+                handle.pause()
+
+    def export_json_state(
+        self,
+        filename: str | pathlib.Path | None = None,
+        *,
+        include_data: bool = False,
+    ) -> str:
+        text = json.dumps(self.get_state(include_data=include_data), indent=2)
+        if filename is not None:
+            pathlib.Path(filename).write_text(text, encoding="utf-8")
+        return text
+
+    def set_linked_crosshair(
+        self,
+        group_id: str = "default",
+        *,
+        enabled: bool = True,
+        axis: str = "x",
+    ) -> None:
+        axis_norm = str(axis).strip().lower()
+        if axis_norm not in {"x", "y", "xy"}:
+            raise ValueError("axis must be 'x', 'y', or 'xy'.")
+        self._linked_crosshair = {
+            "enabled": bool(enabled),
+            "group_id": str(group_id or "default"),
+            "axis": axis_norm,
+        }
+        self.send({"type": "linked_crosshair", **self._linked_crosshair})
+
+    def set_theme(self, name: str = "nbimplot") -> None:
+        theme = str(name or "").strip() or "nbimplot"
+        self._theme_name = theme
+        self.send({"type": "theme", "name": theme})
+
+    def copy_png_to_clipboard(self) -> None:
+        self._ensure_open()
+        self.send({"type": "copy_png_to_clipboard"})
 
     def render(self) -> None:
         self._ensure_open()
@@ -2015,14 +2375,40 @@ class Plot(anywidget.AnyWidget):
             buffers=[memoryview(x_data), memoryview(data)] if x_data is not None else [memoryview(data)],
         )
 
-    def _append_series_data(self, series_id: str, y: Any, *, max_points: int | None = None) -> None:
+    def _resolve_series_id(self, value: str | LineHandle) -> str:
+        if isinstance(value, LineHandle):
+            return value.series_id
+        raw = str(value)
+        if raw in self._series:
+            return raw
+        for series_id, meta in self._series.items():
+            if meta.name == raw:
+                return series_id
+        raise KeyError(f"Unknown series: {raw!r}")
+
+    def _append_series_data(
+        self,
+        series_id: str,
+        y: Any,
+        *,
+        x: Any | None = None,
+        max_points: int | None = None,
+    ) -> None:
         self._ensure_open()
         meta = self._series.get(series_id)
         if meta is None:
             raise KeyError(f"Unknown series_id: {series_id}")
-        if meta.x_data is not None:
-            raise ValueError("append is not supported for custom-x line series; use set_data(y, x=x).")
         append_data = _to_float32_1d(y, arg_name="y")
+        append_x = _to_line_x(x, y_len=int(append_data.size)) if x is not None else None
+        if meta.x_data is not None and append_x is None:
+            raise ValueError("x must be provided when appending to a custom-x line series.")
+        if meta.x_data is None and append_x is not None:
+            existing_x: np.ndarray | None = np.arange(meta.data.size, dtype=np.float32)
+        else:
+            existing_x = meta.x_data
+        if existing_x is not None and append_x is not None and existing_x.size > 0 and append_x.size > 0:
+            if float(append_x[0]) < float(existing_x[-1]):
+                raise ValueError("appended x values must continue the non-decreasing x order.")
         if max_points is None:
             cap = meta.stream_capacity
         else:
@@ -2032,6 +2418,18 @@ class Plot(anywidget.AnyWidget):
             cap = cap_i
             meta.stream_capacity = cap_i
         if append_data.size == 0:
+            return
+        if existing_x is not None and append_x is not None:
+            if cap is not None and append_data.size >= int(cap):
+                new_data = append_data[-int(cap) :].copy()
+                new_x = append_x[-int(cap) :].copy()
+            else:
+                new_data = np.concatenate([meta.data, append_data]).astype(np.float32, copy=False)
+                new_x = np.concatenate([existing_x, append_x]).astype(np.float32, copy=False)
+                if cap is not None and new_data.size > int(cap):
+                    new_data = new_data[-int(cap) :].copy()
+                    new_x = new_x[-int(cap) :].copy()
+            self._set_series_data(series_id, new_data, x=new_x)
             return
         if cap is not None and append_data.size >= int(cap):
             new_data = append_data[-int(cap) :].copy()
@@ -2053,6 +2451,39 @@ class Plot(anywidget.AnyWidget):
             },
             buffers=[memoryview(append_data)],
         )
+
+    def _clear_series_data(self, series_id: str, *, x0: float = 0.0, y0: float = 0.0) -> None:
+        meta = self._series.get(series_id)
+        if meta is None:
+            raise KeyError(f"Unknown series_id: {series_id}")
+        data = np.array([float(y0)], dtype=np.float32)
+        if meta.x_data is not None:
+            self._set_series_data(series_id, data, x=np.array([float(x0)], dtype=np.float32))
+        else:
+            self._set_series_data(series_id, data)
+
+    def _set_stream_capacity(self, series_id: str, capacity: int) -> None:
+        meta = self._series.get(series_id)
+        if meta is None:
+            raise KeyError(f"Unknown series_id: {series_id}")
+        meta.stream_capacity = int(capacity)
+        if meta.data.size > int(capacity):
+            y = meta.data[-int(capacity) :].copy()
+            x = meta.x_data[-int(capacity) :].copy() if meta.x_data is not None else None
+            self._set_series_data(series_id, y, x=x)
+
+    def _set_stream_paused(self, series_id: str, paused: bool) -> None:
+        meta = self._series.get(series_id)
+        if meta is None:
+            raise KeyError(f"Unknown series_id: {series_id}")
+        meta.stream_paused = bool(paused)
+
+    def _set_stream_options(self, series_id: str, *, auto_render: bool, autoscale_y: bool) -> None:
+        meta = self._series.get(series_id)
+        if meta is None:
+            raise KeyError(f"Unknown series_id: {series_id}")
+        meta.stream_auto_render = bool(auto_render)
+        meta.stream_autoscale_y = bool(autoscale_y)
 
     @staticmethod
     def _series_style_payload(meta: _SeriesMeta) -> dict[str, Any]:
@@ -2129,6 +2560,25 @@ class Plot(anywidget.AnyWidget):
         if int(code) == 2:
             return "time"
         return "linear"
+
+    @staticmethod
+    def _axis_name(code: int) -> str:
+        mapping = {
+            0: "x1",
+            1: "x2",
+            2: "x3",
+            3: "y1",
+            4: "y2",
+            5: "y3",
+        }
+        return mapping.get(int(code), "x1")
+
+    @staticmethod
+    def _marker_name(code: int) -> str:
+        for name, value in _SERIES_MARKER_MAP.items():
+            if int(value) == int(code):
+                return name
+        return "none"
 
     @staticmethod
     def _axis_code(value: str) -> int:
@@ -2293,6 +2743,7 @@ class Plot(anywidget.AnyWidget):
             }
         except (KeyError, TypeError, ValueError):
             return
+        self._last_view = dict(view)
         for callback in self._view_callbacks:
             callback(self, view)
 
@@ -2334,6 +2785,9 @@ class Plot(anywidget.AnyWidget):
             }
         )
         self.send({"type": "colormap", "name": self._colormap_name})
+        if self._theme_name:
+            self.send({"type": "theme", "name": self._theme_name})
+        self.send({"type": "linked_crosshair", **self._linked_crosshair})
         for axis_idx in range(6):
             enabled, scale = self._axis_state.get(axis_idx, (axis_idx in (0, 3), 0))
             self.send(
@@ -2617,6 +3071,55 @@ class Subplots:
     def export_png(self, filename: str = "nbimplot.png") -> None:
         self._plot.export_png(filename)
 
+    def copy_png_to_clipboard(self) -> None:
+        self._plot.copy_png_to_clipboard()
+
+    def set_theme(self, name: str = "nbimplot") -> None:
+        self._plot.set_theme(name)
+
+    def set_linked_crosshair(
+        self,
+        group_id: str = "default",
+        *,
+        enabled: bool = True,
+        axis: str = "x",
+    ) -> None:
+        self._plot.set_linked_crosshair(group_id, enabled=enabled, axis=axis)
+
+    def get_state(self, *, include_data: bool = False) -> dict[str, Any]:
+        return self._plot.get_state(include_data=include_data)
+
+    def set_state(self, state: dict[str, Any]) -> None:
+        self._plot.set_state(state)
+
+    def export_json_state(
+        self,
+        filename: str | pathlib.Path | None = None,
+        *,
+        include_data: bool = False,
+    ) -> str:
+        return self._plot.export_json_state(filename, include_data=include_data)
+
+    def export_csv_selection(
+        self,
+        selection: dict[str, Any],
+        series: str | LineHandle | None = None,
+        *,
+        filename: str | pathlib.Path | None = None,
+    ) -> str:
+        return self._plot.export_csv_selection(selection, series, filename=filename)
+
+    def highlight_selection(
+        self,
+        selection: dict[str, Any],
+        series: str | LineHandle | None = None,
+        *,
+        name: str = "selection",
+        points: bool = True,
+        rect: bool = True,
+    ) -> None:
+        self._plot.highlight_selection(selection, series, name=name, points=points, rect=rect)
+
 
 class AlignedPlots(Subplots):
     """Compatibility wrapper for aligned-plot workflows via native subplots."""
@@ -2632,3 +3135,41 @@ class AlignedPlots(Subplots):
     ) -> None:
         super().__init__(rows, cols, **kwargs)
         self._plot.set_aligned_group(group_id, enabled=True, vertical=vertical)
+
+
+class Dashboard(Subplots):
+    """Convenience wrapper for linked, realtime dashboard layouts."""
+
+    def __init__(
+        self,
+        rows: int,
+        cols: int,
+        *,
+        title: str = "Dashboard",
+        width: int = 1100,
+        height: int = 650,
+        link_x: bool = True,
+        link_y: bool = False,
+        crosshairs: bool = True,
+        linked_crosshair: bool = True,
+        crosshair_group: str = "dashboard",
+        theme: str | None = "nbimplot",
+        **kwargs: Any,
+    ) -> None:
+        kwargs.setdefault("link_all_x", bool(link_x))
+        kwargs.setdefault("link_all_y", bool(link_y))
+        super().__init__(rows, cols, title=title, width=width, height=height, **kwargs)
+        if crosshairs:
+            self._plot._plot_flags |= _PLOT_FLAG_CROSSHAIRS
+            self._plot.send(
+                {
+                    "type": "plot_options",
+                    "plot_flags": int(self._plot._plot_flags),
+                    "axis_scale_x": int(self._plot._axis_scale_x),
+                    "axis_scale_y": int(self._plot._axis_scale_y),
+                }
+            )
+        if theme:
+            self._plot.set_theme(theme)
+        if linked_crosshair:
+            self._plot.set_linked_crosshair(crosshair_group, enabled=True, axis="x")

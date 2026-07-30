@@ -67,7 +67,8 @@ NumPy indices are computed only when `indices_for_selection(...)` is called.
 
 ## Streaming
 
-Use `stream_line` when samples arrive in chunks and implicit sample index is acceptable:
+Use `stream_line` when samples arrive in chunks. It supports implicit sample
+indices and explicit x chunks:
 
 ```python
 p = ip.Plot(width=1000, height=360, title="Streaming")
@@ -79,7 +80,15 @@ h.append(chunk)
 p.render()
 ```
 
-For custom timestamps or irregular x values, maintain your own x/y arrays and call `set_data(y, x=x)`.
+For custom timestamps or irregular x values:
+
+```python
+h = p.stream_line("ticks", capacity=200_000, initial=y0, initial_x=x0, auto_render=True)
+h.append(y_chunk, x=x_chunk)
+h.pause()
+h.resume()
+h.set_window(50_000)
+```
 
 ## Interaction Checklist
 

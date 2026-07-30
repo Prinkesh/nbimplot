@@ -51,6 +51,37 @@ To export the active canvas:
 await plot.downloadPNG("signal.png");
 const blob = await plot.toBlob("image/png");
 const dataUrl = plot.toDataURL("image/png");
+await plot.copy_png_to_clipboard();
+```
+
+## Advanced Web API
+
+```js
+plot.setTheme("nbimplot");
+plot.setLinkedCrosshair("shared", { axis: "x" });
+plot.set_subplots_config({ rows: 2, cols: 2, linkAllX: true });
+
+const h = plot.streamLine("ticks", { capacity: 100_000, initial, x: initialX });
+h.append(chunk, { x: chunkX });
+h.pause();
+h.resume();
+h.setWindow(25_000);
+h.setStreamOptions({ autoRender: true });
+h.clear();
+
+plot.onSelection((selection) => {
+  const bounds = plot.selectionBounds(selection);
+  plot.highlightSelection(selection, h);
+  const csv = plot.exportCSVSelection(selection, h);
+  const csvAlias = plot.export_csv_selection(selection, h);
+  console.log(bounds, csv, csvAlias);
+});
+
+const state = plot.getState({ includeData: true });
+plot.setState(state);
+const json = plot.exportJSONState({ includeData: true });
+const jsonAlias = plot.export_json_state({ includeData: true });
+console.log(json, jsonAlias);
 ```
 
 ## React Pattern

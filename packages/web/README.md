@@ -91,6 +91,7 @@ await createPlot("#plot", { wasmBinary });
 Core methods:
 
 - `createPlot(target, options)`
+- `createDashboard(target, { rows, cols, linkX, linkY })`
 - `plot.line(name, y, options)`
 - `plot.streamLine(name, { capacity, initial })`
 - `handle.setData(y, { x })`
@@ -100,8 +101,13 @@ Core methods:
 - `plot.toDataURL(type?, quality?)`
 - `plot.toBlob(type?, quality?)`
 - `plot.downloadPNG(filename?)`
+- `plot.copy_png_to_clipboard()`
 - `plot.autoscale()`
 - `plot.setView(xMin, xMax, yMin, yMax)`
+- `plot.setTheme(name)`
+- `plot.setLinkedCrosshair(groupId, { axis })`
+- `plot.getState({ includeData })` / `plot.setState(state)`
+- `plot.exportJSONState({ includeData, filename })`
 - `plot.getView()`
 - `plot.getPerfStats()`
 - `plot.dispose()`
@@ -112,6 +118,9 @@ Core methods:
 - `plot.onSelection(callback)` / `plot.onSelect(callback)`
 - `plot.onInteraction(callback)` for raw 8-float WASM interaction tuples
 - `plot.indicesForSelection(selection, series?)`
+- `plot.selectionBounds(selection)`
+- `plot.highlightSelection(selection, series?, options?)`
+- `plot.exportCSVSelection(selection, series?, options?)`
 
 Plot primitives:
 
@@ -127,8 +136,9 @@ Plot primitives:
 - `primitive(kind, payload, buffers)` for direct access to supported WASM primitive kinds
 
 Python-style aliases are available for common names, such as `stream_line`,
-`bar_groups`, `bars_h`, `error_bars`, `heatmap`, `set_view`, and
-`set_colormap`.
+`bar_groups`, `bars_h`, `error_bars`, `heatmap`, `set_view`,
+`set_subplots_config`, `set_colormap`, `export_csv_selection`, and
+`export_json_state`.
 
 Search terms this package is designed to answer: ImPlot web plotting, WASM
 plotting, WebGL2 time-series plotting, typed-array plotting, large-data browser
@@ -196,12 +206,25 @@ h.setData(yNew, { x: xNew });
 so the WASM LOD engine can binary-search the visible range. If the line keeps
 the same length, `h.setData(yNew)` preserves the existing x buffer.
 
+Streaming can also carry explicit x chunks:
+
+```js
+const h = plot.streamLine("ticks", { capacity: 200_000, initial, x: initialX });
+h.append(chunk, { x: chunkX });
+h.pause();
+h.resume();
+h.setWindow(50_000);
+h.setStreamOptions({ autoRender: true, autoscaleY: false });
+h.clear();
+```
+
 ## PNG Export
 
 ```js
 await plot.downloadPNG("nbimplot-signal.png");
 const dataUrl = plot.toDataURL("image/png");
 const blob = await plot.toBlob("image/png");
+await plot.copy_png_to_clipboard();
 ```
 
 The export methods redraw the current strict WASM/ImPlot canvas immediately

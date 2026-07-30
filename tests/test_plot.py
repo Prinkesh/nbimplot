@@ -71,8 +71,12 @@ def test_line_explicit_x_validation_and_append_rules():
     handle = plot.line("custom-x", y, x=np.arange(4, dtype=np.float32))
     with pytest.raises(ValueError, match="resizing"):
         handle.set_data(np.arange(5, dtype=np.float32))
-    with pytest.raises(ValueError, match="append is not supported"):
+    with pytest.raises(ValueError, match="x must be provided"):
         handle.append(np.ones(2, dtype=np.float32))
+    with pytest.raises(ValueError, match="non-decreasing"):
+        handle.append(np.ones(2, dtype=np.float32), x=np.array([2, 3], dtype=np.float32))
+
+    handle.append(np.array([4, 5], dtype=np.float32), x=np.array([4, 5], dtype=np.float32))
 
 
 def test_set_data_reports_reuse_flag():
@@ -756,6 +760,96 @@ def test_stream_line_append_and_hidden_next_item():
     assert content["type"] == "primitive_add"
     assert content["kind"] == "scatter"
     assert content["hidden"] is True
+
+
+def test_stream_line_explicit_x_controls_and_state_exports(tmp_path):
+    plot = ip.Plot()
+    sent = _capture_messages(plot)
+
+    handle = plot.stream_line(
+        "ticks",
+        capacity=4,
+        initial=np.array([1, 2], dtype=np.float32),
+        initial_x=np.array([10, 11], dtype=np.float32),
+        auto_render=True,
+    )
+    sent.clear()
+    handle.append(np.array([3, 4, 5], dtype=np.float32), x=np.array([12, 13, 14], dtype=np.float32))
+    content, buffers = sent[-2]
+    assert content["type"] == "set_data"
+    assert content["has_x"] is True
+    np.testing.assert_allclose(np.frombuffer(buffers[0], dtype=np.float32), np.array([11, 12, 13, 14], dtype=np.float32))
+    np.testing.assert_allclose(np.frombuffer(buffers[1], dtype=np.float32), np.array([2, 3, 4, 5], dtype=np.float32))
+    assert sent[-1][0]["type"] == "render"
+
+    handle.pause()
+    sent.clear()
+    handle.append(np.array([6], dtype=np.float32), x=np.array([15], dtype=np.float32))
+    assert sent == []
+    handle.resume()
+    handle.set_window(2)
+    assert plot.get_state(include_data=True)["series"][0]["stream_capacity"] == 2
+    handle.clear(x0=100.0, y0=-1.0)
+    assert plot.get_state(include_data=True)["series"][0]["y"] == [-1.0]
+
+    path = tmp_path / "state.json"
+    text = plot.export_json_state(path, include_data=True)
+    assert path.read_text(encoding="utf-8") == text
+    assert '"series"' in text
+
+
+def test_selection_highlight_csv_theme_linked_and_clipboard_messages(tmp_path):
+    plot = ip.Plot()
+    sent = _capture_messages(plot)
+    handle = plot.line("mid", np.array([0, 1, 2, 3], dtype=np.float32), x=np.array([0, 1, 2, 3], dtype=np.float32))
+    selection = {"x_min": 0.5, "x_max": 2.5, "y_min": 0.5, "y_max": 2.5, "subplot_index": 0}
+
+    indices = plot.indices_for_selection(selection, "mid")
+    np.testing.assert_array_equal(indices, np.array([1, 2], dtype=np.int64))
+
+    sent.clear()
+    plot.highlight_selection(selection, handle)
+    assert [msg[0]["type"] for msg in sent] == ["primitive_add", "primitive_add"]
+    assert sent[0][0]["kind"] == "drag_rect"
+    assert sent[1][0]["kind"] == "scatter"
+
+    csv_path = tmp_path / "selection.csv"
+    csv_text = plot.export_csv_selection(selection, "mid", filename=csv_path)
+    assert "series_id,series_name,index,x,y" in csv_text
+    assert ",mid,1,1,1" in csv_text
+    assert csv_path.read_text(encoding="utf-8") == csv_text
+
+    sent.clear()
+    plot.set_theme("notebook")
+    plot.set_colormap("Viridis")
+    plot.set_linked_crosshair("group-a", axis="xy")
+    plot.copy_png_to_clipboard()
+    assert [msg[0]["type"] for msg in sent] == ["theme", "colormap", "linked_crosshair", "copy_png_to_clipboard"]
+    assert sent[2][0]["group_id"] == "group-a"
+
+
+def test_state_restore_and_dashboard_api():
+    plot = ip.Plot(title="state")
+    _capture_messages(plot)
+    plot.set_view(0, 10, -1, 1)
+    plot.set_theme("nbimplot")
+    plot.set_linked_crosshair("state-group")
+    plot.line("mid", np.array([1, 2, 3], dtype=np.float32), x=np.array([10, 11, 12], dtype=np.float32), marker="circle")
+    state = plot.get_state(include_data=True)
+
+    restored = ip.Plot()
+    sent = _capture_messages(restored)
+    restored.set_state(state)
+    assert restored.get_state(include_data=True)["series"][0]["name"] == "mid"
+    assert any(msg[0]["type"] == "theme" for msg in sent)
+    assert any(msg[0]["type"] == "linked_crosshair" for msg in sent)
+
+    dash = ip.Dashboard(2, 2, title="D", theme="nbimplot")
+    sent = _capture_messages(dash._plot)
+    dash.set_theme("notebook")
+    dash.set_linked_crosshair("dash")
+    dash.copy_png_to_clipboard()
+    assert [msg[0]["type"] for msg in sent] == ["theme", "linked_crosshair", "copy_png_to_clipboard"]
 
 
 def test_axis_config_and_aligned_group_messages_replay():

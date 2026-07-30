@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "nbimplot"
-version = "0.1.12"
+version = "0.1.13"
 description = "ImPlot-powered WASM plotting for fast interactive Jupyter and web visualizations."
 readme = "README.md"
 requires-python = ">=3.10"

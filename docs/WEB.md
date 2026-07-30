@@ -134,10 +134,59 @@ plot.image("rgba", pixels, {
 await plot.downloadPNG("nbimplot-signal.png");
 const dataUrl = plot.toDataURL("image/png");
 const blob = await plot.toBlob("image/png");
+await plot.copy_png_to_clipboard();
 ```
 
 Export redraws the strict WASM/ImPlot canvas immediately before reading pixels;
 it does not use a JavaScript plotting fallback.
+
+## Streaming, Selection, State, and Dashboards
+
+```js
+const h = plot.streamLine("ticks", {
+  capacity: 200_000,
+  initial,
+  x: initialX,
+  autoRender: true,
+});
+h.append(chunk, { x: chunkX });
+h.pause();
+h.resume();
+h.setWindow(50_000);
+h.clear();
+
+plot.setTheme("nbimplot");
+plot.setLinkedCrosshair("desk", { axis: "xy" });
+plot.set_subplots_config({ rows: 2, cols: 2, linkAllX: true });
+
+plot.onSelection((selection) => {
+  const bounds = plot.selectionBounds(selection);
+  const indices = plot.indicesForSelection(selection, h);
+  plot.highlightSelection(selection, h, { name: "picked" });
+  const csv = plot.exportCSVSelection(selection, h);
+  const csvAlias = plot.export_csv_selection(selection, h);
+  console.log(bounds, indices.length, csv, csvAlias);
+});
+
+const state = plot.getState({ includeData: true });
+const json = plot.exportJSONState({ includeData: true });
+const jsonAlias = plot.export_json_state({ includeData: true });
+plot.setState(state);
+console.log(json, jsonAlias);
+```
+
+```js
+import { createDashboard } from "@nbimplot/web";
+
+const dashboard = await createDashboard("#dashboard", {
+  rows: 2,
+  cols: 2,
+  title: "Realtime Desk",
+  theme: "nbimplot",
+});
+dashboard.line("cpu", cpu, { x: t, subplotIndex: 0 });
+dashboard.line("latency", latency, { x: t, subplotIndex: 1 });
+```
 
 ## Lifecycle
 

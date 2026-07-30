@@ -36,8 +36,8 @@ const examples = [
     id: "streaming-plot",
     section: "Performance",
     title: "Realtime Streaming Ring Buffer",
-    text: "Appends small typed-array chunks into a fixed-capacity line without recreating the plot.",
-    code: 'const h = plot.streamLine("ticks", { capacity: 12000 });\nh.append(chunk);',
+    text: "Appends explicit x/y typed-array chunks into a fixed-capacity line with pause/resume controls.",
+    code: 'const h = plot.streamLine("ticks", { capacity: 12000, x: initialX });\nh.append(chunk, { x: chunkX });\nh.pause(); h.resume();',
   },
   {
     id: "scatter-plot",
@@ -91,9 +91,9 @@ const examples = [
   {
     id: "subplots-plot",
     section: "Layout",
-    title: "Linked Subplots",
-    text: "A 2x2 ImPlot subplot grid with shared x-axis interaction and mixed plot primitives.",
-    code: 'plot.setSubplots(2, 2, { linkAllX: true });\nplot.line("a", y, { x, subplotIndex: 0 });\nplot.scatter("b", y, { x, subplotIndex: 1 });',
+    title: "Linked Subplots + Crosshair",
+    text: "A 2x2 ImPlot subplot grid with shared x-axis interaction, linked crosshair, and mixed plot primitives.",
+    code: 'plot.setSubplots(2, 2, { linkAllX: true });\nplot.setLinkedCrosshair("desk", { axis: "x" });\nplot.line("a", y, { x, subplotIndex: 0 });',
   },
   {
     id: "drag-plot",
@@ -112,9 +112,9 @@ const examples = [
   {
     id: "advanced-api-plot",
     section: "Advanced API",
-    title: "View, Constraints, Axis Links, Export",
-    text: "A focused API coverage example for view/perf callbacks, PNG export, manual render scheduling, axis constraints/state/linking, aligned groups, time axes, and direct primitive access.",
-    code: 'plot.onViewChange(console.log);\nconst url = plot.toDataURL();\nconst blob = await plot.toBlob();\nawait plot.downloadPNG("advanced.png");\nplot.setAxisLimitsConstraints("y1", -1.4, 1.4);\nplot.setAxisLink("x2", "x1");',
+    title: "State, Selection, Export",
+    text: "A focused API coverage example for view/perf callbacks, state snapshots, PNG export, selection CSV, highlighting, constraints, links, and direct primitive access.",
+    code: 'plot.setTheme("nbimplot");\nconst state = plot.getState({ includeData: true });\nplot.highlightSelection(selection, h);\nconst csv = plot.exportCSVSelection(selection, h);\nawait plot.downloadPNG("advanced.png");',
   },
 ];
 

@@ -1,6 +1,6 @@
-import createNbImPlotModule from "../wasm/nbimplot_wasm.js?v=png-export";
+import createNbImPlotModule from "../wasm/nbimplot_wasm.js?v=feature-dashboard";
 
-const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm", import.meta.url);
+const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm?v=feature-dashboard", import.meta.url);
 const LABEL_SEP = "\x1f";
 const PIE_FMT_SEP = "\x1e";
 const HEATMAP_META_SEP = "\x1d";
@@ -94,6 +94,17 @@ export const MARKERS = Object.freeze({
 
 let modulePromise = null;
 let moduleAssetKey = "";
+const linkedCrosshairGroups = new Map();
+
+function linkedCrosshairGroup(groupId) {
+  const key = String(groupId || "default");
+  let group = linkedCrosshairGroups.get(key);
+  if (!group) {
+    group = new Set();
+    linkedCrosshairGroups.set(key, group);
+  }
+  return group;
+}
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -162,6 +173,24 @@ function sanitizePngFilename(filename) {
   return /\.png$/i.test(safe) ? safe : `${safe}.png`;
 }
 
+function sanitizeJsonFilename(filename) {
+  const raw = String(filename || "nbimplot-state.json").trim() || "nbimplot-state.json";
+  const safe = raw.replace(/[\\/:*?"<>|]+/g, "_");
+  return /\.json$/i.test(safe) ? safe : `${safe}.json`;
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
 function ensureLineX(value, yLength) {
   const out = ensureVector(value, "x");
   if (out.length !== yLength) {
@@ -179,6 +208,43 @@ function ensureLineX(value, yLength) {
     previous = current;
   }
   return out;
+}
+
+function concatFloat32(a, b) {
+  const out = new Float32Array(a.length + b.length);
+  out.set(a, 0);
+  out.set(b, a.length);
+  return out;
+}
+
+function rangeFloat32(length) {
+  return Float32Array.from({ length: Math.max(0, Number(length) | 0) }, (_, i) => i);
+}
+
+function resolveAxisName(code) {
+  for (const [name, value] of Object.entries(AXES)) {
+    if (value === (Number(code) | 0)) return name;
+  }
+  return "x1";
+}
+
+function resolveScaleName(code) {
+  for (const [name, value] of Object.entries(AXIS_SCALES)) {
+    if (value === (Number(code) | 0)) return name;
+  }
+  return "linear";
+}
+
+function resolveMarkerName(code) {
+  for (const [name, value] of Object.entries(MARKERS)) {
+    if (value === (Number(code) | 0)) return name;
+  }
+  return "none";
+}
+
+function csvValue(value) {
+  const text = String(value ?? "");
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 function normalizeMatrix(value, options = {}, name = "data") {
@@ -298,6 +364,7 @@ function domButtonToImGuiButton(button) {
 }
 
 function plotFlagsFromOptions(options = {}) {
+  if (Number.isFinite(Number(options.flags))) return Number(options.flags) | 0;
   let flags = 0;
   if (options.noLegend) flags |= PLOT_FLAGS.NO_LEGEND;
   if (options.noMenus) flags |= PLOT_FLAGS.NO_MENUS;
@@ -309,6 +376,7 @@ function plotFlagsFromOptions(options = {}) {
 }
 
 function subplotFlagsFromOptions(options = {}) {
+  if (Number.isFinite(Number(options.flags))) return Number(options.flags) | 0;
   let flags = 0;
   if (options.noLegend) flags |= SUBPLOT_FLAGS.NO_LEGEND;
   if (options.noMenus) flags |= SUBPLOT_FLAGS.NO_MENUS;
@@ -816,6 +884,9 @@ class LineHandle {
     this.capacity = Math.max(0, Number(options.capacity || 0) | 0);
     this.xData = options.xData || null;
     this.record = options.record || null;
+    this.paused = Boolean(options.paused);
+    this.autoRender = Boolean(options.autoRender ?? options.auto_render);
+    this.autoscaleY = Boolean(options.autoscaleY ?? options.autoscale_y);
   }
 
   setData(y, options = {}) {
@@ -849,20 +920,38 @@ class LineHandle {
     return this;
   }
 
-  append(y) {
+  append(y, options = {}) {
     this.plot._assertReady();
-    if (this.xData) {
-      throw new Error("append is not supported for custom-x lines; use setData(y, { x }).");
-    }
+    if (this.paused) return this;
     const appended = ensureVector(y, "y");
+    const appendX = options.x != null ? ensureLineX(options.x, appended.length) : null;
+    if (this.xData && !appendX) {
+      throw new Error("x must be provided when appending to a custom-x line.");
+    }
+    if (appendX) {
+      const existingX = this.xData || rangeFloat32(this.record?.data?.length || 0);
+      if (existingX.length > 0 && appendX.length > 0 && appendX[0] < existingX[existingX.length - 1]) {
+        throw new Error("appended x values must continue the non-decreasing x order.");
+      }
+      let mergedY = concatFloat32(this.record?.data || new Float32Array(0), appended);
+      let mergedX = concatFloat32(existingX, appendX);
+      const maxPoints = Math.max(0, Number(options.maxPoints ?? options.max_points ?? this.capacity) | 0);
+      if (maxPoints > 0) this.capacity = maxPoints;
+      if (maxPoints > 0 && mergedY.length > maxPoints) {
+        mergedY = mergedY.slice(mergedY.length - maxPoints);
+        mergedX = mergedX.slice(mergedX.length - maxPoints);
+      }
+      this.setData(mergedY, { x: mergedX });
+      this._afterAppend();
+      return this;
+    }
+    const maxPoints = Math.max(0, Number(options.maxPoints ?? options.max_points ?? this.capacity) | 0);
+    if (maxPoints > 0) this.capacity = maxPoints;
     if (!this.plot.wasm.appendLineData(this.token, appended, this.capacity)) {
       throw new Error("Failed to append line data.");
     }
     if (this.record) {
-      const total = this.record.data.length + appended.length;
-      let merged = new Float32Array(total);
-      merged.set(this.record.data, 0);
-      merged.set(appended, this.record.data.length);
+      let merged = concatFloat32(this.record.data, appended);
       if (this.capacity > 0 && merged.length > this.capacity) {
         merged = merged.slice(merged.length - this.capacity);
       }
@@ -870,6 +959,67 @@ class LineHandle {
       this.record.xData = null;
     }
     this.plot._afterDataChange();
+    this._afterAppend();
+    return this;
+  }
+
+  _afterAppend() {
+    if (this.record) {
+      this.record.streamPaused = this.paused;
+      this.record.streamAutoRender = this.autoRender;
+      this.record.streamAutoscaleY = this.autoscaleY;
+      this.record.capacity = this.capacity;
+    }
+    if (this.autoscaleY) {
+      this.plot.autoscale();
+    } else if (this.autoRender) {
+      this.plot.requestRender();
+    }
+  }
+
+  pause() {
+    this.paused = true;
+    if (this.record) this.record.streamPaused = true;
+    return this;
+  }
+
+  resume() {
+    this.paused = false;
+    if (this.record) this.record.streamPaused = false;
+    return this;
+  }
+
+  clear(options = {}) {
+    const y0 = Number(options.y0 ?? 0);
+    const x0 = Number(options.x0 ?? 0);
+    return this.setData(new Float32Array([y0]), this.xData ? { x: new Float32Array([x0]) } : {});
+  }
+
+  setWindow(capacity) {
+    const cap = Math.max(1, Number(capacity) | 0);
+    this.capacity = cap;
+    if (this.record) {
+      this.record.capacity = cap;
+      if (this.record.data.length > cap) {
+        const y = this.record.data.slice(this.record.data.length - cap);
+        const x = this.record.xData ? this.record.xData.slice(this.record.xData.length - cap) : null;
+        this.setData(y, x ? { x } : {});
+      }
+    }
+    return this;
+  }
+
+  setStreamOptions(options = {}) {
+    if (options.autoRender != null || options.auto_render != null) {
+      this.autoRender = Boolean(options.autoRender ?? options.auto_render);
+    }
+    if (options.autoscaleY != null || options.autoscale_y != null) {
+      this.autoscaleY = Boolean(options.autoscaleY ?? options.autoscale_y);
+    }
+    if (this.record) {
+      this.record.streamAutoRender = this.autoRender;
+      this.record.streamAutoscaleY = this.autoscaleY;
+    }
     return this;
   }
 
@@ -886,20 +1036,25 @@ class LineHandle {
   setStyle(style = {}) {
     this.plot._assertReady();
     this.plot.wasm.setSeriesStyle(this.token, style);
+    if (this.record) {
+      this.record.style = { ...this.record.style, ...style };
+    }
     this.plot.requestRender();
     return this;
   }
 }
 
 class PrimitiveHandle {
-  constructor(plot, token) {
+  constructor(plot, token, record = null) {
     this.plot = plot;
     this.token = token >>> 0;
+    this.record = record;
   }
 
   setVisible(visible) {
     this.plot._assertReady();
     this.plot.wasm.setPrimitiveVisible(this.token, Boolean(visible));
+    if (this.record) this.record.visible = Boolean(visible);
     this.plot.requestRender();
     return this;
   }
@@ -907,6 +1062,7 @@ class PrimitiveHandle {
   remove() {
     this.plot._assertReady();
     this.plot.wasm.removePrimitive(this.token);
+    this.plot.primitiveRecords.delete(this.token);
     this.plot.requestRender();
   }
 }
@@ -937,15 +1093,30 @@ export class WebPlot {
     this.selectionCallbacks = new Set();
     this.perfCallbacks = new Set();
     this.seriesByToken = new Map();
+    this.primitiveRecords = new Map();
     this.lastInteractionHash = "";
     this.plotFlags = plotFlagsFromOptions(options);
     this.axisScaleX = scaleCode(options.axisScaleX || "linear");
     this.axisScaleY = scaleCode(options.axisScaleY || "linear");
+    this.axisState = Array.from({ length: 6 }, (_, axis) => ({
+      enabled: axis === AXES.x1 || axis === AXES.y1,
+      scale: axis === AXES.x1 ? this.axisScaleX : axis === AXES.y1 ? this.axisScaleY : AXIS_SCALES.linear,
+    }));
+    this.axisLabels = new Array(6).fill("");
+    this.axisFormats = new Array(6).fill("");
+    this.axisTicks = new Map();
+    this.axisLimitsConstraints = new Map();
+    this.axisZoomConstraints = new Map();
+    this.axisLinks = new Map();
     this.subplotRows = Math.max(1, Number(options.subplotRows || 1) | 0);
     this.subplotCols = Math.max(1, Number(options.subplotCols || 1) | 0);
     this.subplotFlags = subplotFlagsFromOptions(options);
     this.colormapName = options.colormap ? String(options.colormap) : "";
+    this.themeName = options.theme ? String(options.theme) : "";
     this.alignedGroup = null;
+    this.linkedCrosshair = { enabled: false, groupId: "", axis: "x" };
+    this.linkedCrosshairTokenBase = 0x70000000 + ((Math.random() * 0x0fffffff) >>> 0);
+    this.linkedCrosshairVisible = false;
     this._buildDom(options);
   }
 
@@ -979,6 +1150,7 @@ export class WebPlot {
   _buildDom(options) {
     this.wrapper = document.createElement("div");
     this.wrapper.className = "nbimplot-web";
+    this.wrapper.dataset.nbimplotTheme = this.themeName || "nbimplot";
     this.wrapper.style.position = "relative";
     this.wrapper.style.width = `${this.width}px`;
     this.wrapper.style.height = `${this.height}px`;
@@ -1070,12 +1242,87 @@ export class WebPlot {
     this.wasm.setPlotOptions(this.plotFlags, this.axisScaleX, this.axisScaleY);
     this.wasm.setSubplots(this.subplotRows, this.subplotCols, this.subplotFlags);
     this.wasm.setColormap(this.colormapName);
+    for (let axis = 0; axis < this.axisState.length; axis += 1) {
+      const state = this.axisState[axis];
+      this.wasm.setAxisState(axis, state.enabled, state.scale);
+    }
     if (this.alignedGroup) {
       this.wasm.setAlignedGroup(
         this.alignedGroup.groupId,
         this.alignedGroup.enabled,
         this.alignedGroup.vertical,
       );
+    }
+  }
+
+  _linkedCrosshairToken(subplotIndex, axis) {
+    const offset = Math.max(0, Number(subplotIndex) | 0) * 2 + (axis === "y" ? 1 : 0);
+    return (this.linkedCrosshairTokenBase + offset) >>> 0;
+  }
+
+  _syncLinkedCrosshairPrimitive(axis, value, subplotIndex) {
+    if (!this.ready || !Number.isFinite(Number(value))) return;
+    const isY = axis === "y";
+    const ints = [0, 0, 0, 1, 0, 3, 0, Math.max(0, Number(subplotIndex) | 0)];
+    const floats = [0, 0, 0, 0, 0, 0, 1.4, 0];
+    if (isY) {
+      floats[5] = Number(value);
+    } else {
+      floats[4] = Number(value);
+    }
+    this.wasm.upsertPrimitive(this._linkedCrosshairToken(subplotIndex, axis), PRIMITIVE_KIND_CODES[isY ? "drag_line_y" : "drag_line_x"], {
+      data0: new Float32Array(0),
+      data1: new Float32Array(0),
+      data2: new Float32Array(0),
+      ints,
+      floats,
+      text: isY ? "linked-y" : "linked-x",
+    });
+    this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, axis), true);
+  }
+
+  _receiveLinkedCrosshair(event) {
+    if (!this.linkedCrosshair.enabled || !event || !this.ready) {
+      this._hideLinkedCrosshair();
+      return;
+    }
+    const count = Math.max(1, this.subplotRows * this.subplotCols);
+    const wantsX = this.linkedCrosshair.axis === "x" || this.linkedCrosshair.axis === "xy";
+    const wantsY = this.linkedCrosshair.axis === "y" || this.linkedCrosshair.axis === "xy";
+    for (let subplotIndex = 0; subplotIndex < count; subplotIndex += 1) {
+      if (wantsX && Number.isFinite(event.x)) {
+        this._syncLinkedCrosshairPrimitive("x", event.x, subplotIndex);
+      } else {
+        this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "x"), false);
+      }
+      if (wantsY && Number.isFinite(event.y)) {
+        this._syncLinkedCrosshairPrimitive("y", event.y, subplotIndex);
+      } else {
+        this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "y"), false);
+      }
+    }
+    this.linkedCrosshairVisible = true;
+    this.requestRender();
+  }
+
+  _hideLinkedCrosshair() {
+    if (!this.ready || !this.linkedCrosshairVisible) return;
+    const count = Math.max(1, this.subplotRows * this.subplotCols);
+    for (let subplotIndex = 0; subplotIndex < count; subplotIndex += 1) {
+      this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "x"), false);
+      this.wasm.setPrimitiveVisible(this._linkedCrosshairToken(subplotIndex, "y"), false);
+    }
+    this.linkedCrosshairVisible = false;
+    this.requestRender();
+  }
+
+  _broadcastLinkedCrosshair(hover) {
+    if (!this.linkedCrosshair.enabled || !this.linkedCrosshair.groupId) return;
+    const group = linkedCrosshairGroups.get(this.linkedCrosshair.groupId);
+    if (!group) return;
+    const event = hover && hover.active ? { x: Number(hover.x), y: Number(hover.y) } : null;
+    for (const plot of group) {
+      plot._receiveLinkedCrosshair(event);
     }
   }
 
@@ -1193,16 +1440,21 @@ export class WebPlot {
 
   async downloadPNG(filename = "nbimplot.png") {
     const blob = await this.toBlob("image/png");
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = sanitizePngFilename(filename);
-    link.style.display = "none";
-    (document.body || this.wrapper).appendChild(link);
-    link.click();
-    link.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+    downloadBlob(blob, sanitizePngFilename(filename));
     return blob;
+  }
+
+  async copyPNGToClipboard() {
+    if (!navigator.clipboard || typeof ClipboardItem === "undefined") {
+      throw new Error("Clipboard PNG copy is not available in this browser.");
+    }
+    const blob = await this.toBlob("image/png");
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    return blob;
+  }
+
+  copy_png_to_clipboard() {
+    return this.copyPNGToClipboard();
   }
 
   _emitViewChange() {
@@ -1225,13 +1477,15 @@ export class WebPlot {
       this.interactionCallbacks.size === 0 &&
       this.hoverCallbacks.size === 0 &&
       this.clickCallbacks.size === 0 &&
-      this.selectionCallbacks.size === 0
+      this.selectionCallbacks.size === 0 &&
+      !this.linkedCrosshair.enabled
     ) {
       return;
     }
     const tuples = this.wasm.getInteractions();
     if (!(tuples instanceof Float32Array) || tuples.length === 0) {
       this.lastInteractionHash = "";
+      this._broadcastLinkedCrosshair(null);
       return;
     }
     const payload = [];
@@ -1311,6 +1565,7 @@ export class WebPlot {
     if (selection) {
       selection.series = selectionSeries.filter((entry) => entry.subplotIndex === selection.subplotIndex);
     }
+    this._broadcastLinkedCrosshair(hover);
     const enriched = { payload, selection, hover, click };
     const hash = JSON.stringify(enriched);
     if (hash === this.lastInteractionHash) return;
@@ -1379,7 +1634,18 @@ export class WebPlot {
     return this.onSelection(callback);
   }
 
-  indicesForSelection(selection, series = null) {
+  _resolveSeriesRecord(series) {
+    if (series == null) return null;
+    const token = typeof series === "number" ? series : Number(series?.token ?? 0);
+    if (token && this.seriesByToken.has(token)) return this.seriesByToken.get(token);
+    const name = String(series?.name ?? series);
+    for (const record of this.seriesByToken.values()) {
+      if (record.name === name) return record;
+    }
+    throw new Error(`Unknown series: ${name}`);
+  }
+
+  selectionBounds(selection) {
     if (!selection || typeof selection !== "object") {
       throw new TypeError("selection must be the object passed to onSelection/onSelect.");
     }
@@ -1390,19 +1656,24 @@ export class WebPlot {
     if (![xMin, xMax, yMin, yMax].every(Number.isFinite)) {
       throw new Error("selection must contain finite x/y bounds.");
     }
-    const x0 = Math.min(xMin, xMax);
-    const x1 = Math.max(xMin, xMax);
-    const y0 = Math.min(yMin, yMax);
-    const y1 = Math.max(yMin, yMax);
+    return {
+      xMin: Math.min(xMin, xMax),
+      xMax: Math.max(xMin, xMax),
+      yMin: Math.min(yMin, yMax),
+      yMax: Math.max(yMin, yMax),
+    };
+  }
+
+  indicesForSelection(selection, series = null) {
+    const bounds = this.selectionBounds(selection);
+    const x0 = bounds.xMin;
+    const x1 = bounds.xMax;
+    const y0 = bounds.yMin;
+    const y1 = bounds.yMax;
 
     const resolveRecords = () => {
       if (series == null) return Array.from(this.seriesByToken.values());
-      const token = typeof series === "number" ? series : Number(series?.token ?? 0);
-      const record = this.seriesByToken.get(token);
-      if (!record) {
-        throw new Error(`Unknown series token: ${token}`);
-      }
-      return [record];
+      return [this._resolveSeriesRecord(series)];
     };
 
     const exactForRecord = (record) => {
@@ -1445,6 +1716,71 @@ export class WebPlot {
     return this.indicesForSelection(selection, series);
   }
 
+  highlightSelection(selection, series = null, options = {}) {
+    const bounds = this.selectionBounds(selection);
+    const subplotIndex = Number(selection.subplotIndex ?? selection.subplot_index ?? 0) | 0;
+    const name = String(options.name || "selection");
+    if (options.rect !== false) {
+      this.dragRect(name, bounds.xMin, bounds.yMin, bounds.xMax, bounds.yMax, { subplotIndex });
+    }
+    if (options.points === false) return this;
+    const selected = this.indicesForSelection(selection, series);
+    const entries = selected instanceof Map ? selected.entries() : [[this._resolveSeriesRecord(series).token, selected]];
+    for (const [token, indices] of entries) {
+      const record = this.seriesByToken.get(token);
+      if (!record || indices.length === 0) continue;
+      const x = new Float32Array(indices.length);
+      const y = new Float32Array(indices.length);
+      for (let i = 0; i < indices.length; i += 1) {
+        const idx = indices[i];
+        x[i] = record.xData ? record.xData[idx] : idx;
+        y[i] = record.data[idx];
+      }
+      this.scatter(`${name}:${record.name}`, y, {
+        x,
+        size: options.size ?? 5,
+        subplotIndex: record.subplotIndex,
+        xAxis: resolveAxisName(record.xAxis),
+        yAxis: resolveAxisName(record.yAxis),
+      });
+    }
+    return this;
+  }
+
+  highlight_selection(selection, series = null, options = {}) {
+    return this.highlightSelection(selection, series, options);
+  }
+
+  exportCSVSelection(selection, series = null, options = {}) {
+    const selected = this.indicesForSelection(selection, series);
+    const rows = [["series_token", "series_name", "index", "x", "y"]];
+    const entries = selected instanceof Map ? selected.entries() : [[this._resolveSeriesRecord(series).token, selected]];
+    for (const [token, indices] of entries) {
+      const record = this.seriesByToken.get(token);
+      if (!record) continue;
+      for (const idxRaw of indices) {
+        const idx = Number(idxRaw) | 0;
+        rows.push([
+          token,
+          record.name,
+          idx,
+          record.xData ? record.xData[idx] : idx,
+          record.data[idx],
+        ]);
+      }
+    }
+    const text = `${rows.map((row) => row.map(csvValue).join(",")).join("\n")}\n`;
+    if (options.download || options.filename) {
+      const filename = String(options.filename || "nbimplot-selection.csv").replace(/[\\/:*?"<>|]+/g, "_");
+      downloadBlob(new Blob([text], { type: "text/csv;charset=utf-8" }), /\.csv$/i.test(filename) ? filename : `${filename}.csv`);
+    }
+    return text;
+  }
+
+  export_csv_selection(selection, series = null, options = {}) {
+    return this.exportCSVSelection(selection, series, options);
+  }
+
   line(name, y, options = {}) {
     this._assertReady();
     const token = this.nextSeriesToken++;
@@ -1454,6 +1790,12 @@ export class WebPlot {
     const capacity = Math.max(0, Number(options.maxPoints || options.max_points || 0) | 0);
     const upload = capacity > 0 && data.length > capacity ? data.subarray(data.length - capacity) : data;
     const uploadX = xData && capacity > 0 && xData.length > capacity ? xData.subarray(xData.length - capacity) : xData;
+    const style = {
+      color: options.color,
+      lineWeight: options.lineWeight ?? options.line_weight ?? 1,
+      marker: options.marker ?? "none",
+      markerSize: options.markerSize ?? options.marker_size ?? 4,
+    };
     const ok = uploadX ? this.wasm.upsertLineXY(token, uploadX, upload, true) : this.wasm.upsertLine(token, upload, true);
     if (!ok) {
       throw new Error("Failed to upload line data.");
@@ -1461,12 +1803,7 @@ export class WebPlot {
     this.wasm.setSeriesName(token, name);
     this.wasm.setSeriesSubplot(token, options.subplotIndex ?? options.subplot_index ?? 0);
     this.wasm.setSeriesAxes(token, xAxis, yAxis);
-    this.wasm.setSeriesStyle(token, {
-      color: options.color,
-      lineWeight: options.lineWeight ?? options.line_weight ?? 1,
-      marker: options.marker ?? "none",
-      markerSize: options.markerSize ?? options.marker_size ?? 4,
-    });
+    this.wasm.setSeriesStyle(token, style);
     if (options.visible === false || options.hidden === true) {
       this.wasm.setSeriesVisible(token, false);
     }
@@ -1479,19 +1816,28 @@ export class WebPlot {
       xAxis,
       yAxis,
       visible: !(options.visible === false || options.hidden === true),
+      capacity,
+      style,
+      streamPaused: false,
+      streamAutoRender: Boolean(options.autoRender ?? options.auto_render),
+      streamAutoscaleY: Boolean(options.autoscaleY ?? options.autoscale_y),
     };
     this.seriesByToken.set(token, record);
     this._afterDataChange();
-    return new LineHandle(this, token, { capacity, xData: uploadX, record });
+    return new LineHandle(this, token, {
+      capacity,
+      xData: uploadX,
+      record,
+      autoRender: record.streamAutoRender,
+      autoscaleY: record.streamAutoscaleY,
+    });
   }
 
   streamLine(name, options = {}) {
-    if (options.x != null) {
-      throw new Error("streamLine does not support custom x data; use line(..., { x }) with setData(y, { x }) updates.");
-    }
     const capacity = Math.max(1, Number(options.capacity) | 0);
     const initial = options.initial ? ensureVector(options.initial, "initial") : new Float32Array([0]);
-    return this.line(name, initial, { ...options, maxPoints: capacity });
+    const initialX = options.x ?? options.initialX ?? options.initial_x;
+    return this.line(name, initial, { ...options, x: initialX, maxPoints: capacity });
   }
 
   stream_line(name, options = {}) {
@@ -1508,8 +1854,16 @@ export class WebPlot {
     }
     const fullPayload = { ...payload, kind: normalizedKind, buffers };
     this._syncPrimitive(token, fullPayload);
+    const record = {
+      token,
+      kind: normalizedKind,
+      payload: { ...payload, kind: normalizedKind },
+      buffers: buffers.map((buffer) => ensureFloat32(buffer).slice()),
+      visible: !(payload.hidden === true || payload.visible === false),
+    };
+    this.primitiveRecords.set(token, record);
     this._afterDataChange();
-    return new PrimitiveHandle(this, token);
+    return new PrimitiveHandle(this, token, record);
   }
 
   _xyPrimitive(kind, name, y, options = {}) {
@@ -1938,7 +2292,8 @@ export class WebPlot {
   setView(xMin, xMax, yMin, yMax) {
     this._assertReady();
     this.initialAutoFitActive = false;
-    this.wasm.setView({ xMin: Number(xMin), xMax: Number(xMax), yMin: Number(yMin), yMax: Number(yMax) });
+    this.view = { xMin: Number(xMin), xMax: Number(xMax), yMin: Number(yMin), yMax: Number(yMax) };
+    this.wasm.setView(this.view);
     this.requestRender();
     return this;
   }
@@ -1979,7 +2334,11 @@ export class WebPlot {
     this._assertReady();
     this.axisScaleX = scaleCode(options.x || "linear");
     this.axisScaleY = scaleCode(options.y || "linear");
+    this.axisState[AXES.x1] = { enabled: true, scale: this.axisScaleX };
+    this.axisState[AXES.y1] = { enabled: true, scale: this.axisScaleY };
     this.wasm.setPlotOptions(this.plotFlags, this.axisScaleX, this.axisScaleY);
+    this.wasm.setAxisState(AXES.x1, true, this.axisScaleX);
+    this.wasm.setAxisState(AXES.y1, true, this.axisScaleY);
     this.requestRender();
     return this;
   }
@@ -1990,10 +2349,16 @@ export class WebPlot {
 
   setSecondaryAxes(options = {}) {
     this._assertReady();
-    this.wasm.setAxisState(AXES.x2, Boolean(options.x2), AXIS_SCALES.linear);
-    this.wasm.setAxisState(AXES.x3, Boolean(options.x3), AXIS_SCALES.linear);
-    this.wasm.setAxisState(AXES.y2, Boolean(options.y2), AXIS_SCALES.linear);
-    this.wasm.setAxisState(AXES.y3, Boolean(options.y3), AXIS_SCALES.linear);
+    for (const [axis, enabled] of [
+      [AXES.x2, Boolean(options.x2)],
+      [AXES.x3, Boolean(options.x3)],
+      [AXES.y2, Boolean(options.y2)],
+      [AXES.y3, Boolean(options.y3)],
+    ]) {
+      const scale = this.axisState[axis]?.scale ?? AXIS_SCALES.linear;
+      this.axisState[axis] = { enabled, scale };
+      this.wasm.setAxisState(axis, enabled, scale);
+    }
     this.requestRender();
     return this;
   }
@@ -2015,7 +2380,16 @@ export class WebPlot {
 
   setAxisState(axis, options = {}) {
     this._assertReady();
-    this.wasm.setAxisState(axisCode(axis), Boolean(options.enabled), scaleCode(options.scale || "linear"));
+    const code = axisCode(axis);
+    const enabled = code === AXES.x1 || code === AXES.y1 ? true : Boolean(options.enabled);
+    const scale = scaleCode(options.scale || "linear");
+    this.axisState[code] = { enabled, scale };
+    if (code === AXES.x1) this.axisScaleX = scale;
+    if (code === AXES.y1) this.axisScaleY = scale;
+    this.wasm.setAxisState(code, enabled, scale);
+    if (code === AXES.x1 || code === AXES.y1) {
+      this.wasm.setPlotOptions(this.plotFlags, this.axisScaleX, this.axisScaleY);
+    }
     this.requestRender();
     return this;
   }
@@ -2026,7 +2400,9 @@ export class WebPlot {
 
   setAxisLabel(axis, label = "") {
     this._assertReady();
-    this.wasm.setAxisLabel(axisCode(axis), label);
+    const code = axisCode(axis);
+    this.axisLabels[code] = String(label || "");
+    this.wasm.setAxisLabel(code, this.axisLabels[code]);
     this.requestRender();
     return this;
   }
@@ -2037,7 +2413,9 @@ export class WebPlot {
 
   setAxisFormat(axis, format = "") {
     this._assertReady();
-    this.wasm.setAxisFormat(axisCode(axis), format);
+    const code = axisCode(axis);
+    this.axisFormats[code] = String(format || "");
+    this.wasm.setAxisFormat(code, this.axisFormats[code]);
     this.requestRender();
     return this;
   }
@@ -2048,7 +2426,12 @@ export class WebPlot {
 
   setAxisTicks(axis, values, options = {}) {
     this._assertReady();
-    this.wasm.setAxisTicks(axisCode(axis), values, options.labels || [], Boolean(options.keepDefault ?? options.keep_default));
+    const code = axisCode(axis);
+    const ticks = ensureVector(values, "tick values");
+    const labels = Array.isArray(options.labels) ? options.labels.map(String) : [];
+    const keepDefault = Boolean(options.keepDefault ?? options.keep_default);
+    this.axisTicks.set(code, { ticks, labels, keepDefault });
+    this.wasm.setAxisTicks(code, ticks, labels, keepDefault);
     this.requestRender();
     return this;
   }
@@ -2059,7 +2442,9 @@ export class WebPlot {
 
   clearAxisTicks(axis) {
     this._assertReady();
-    this.wasm.clearAxisTicks(axisCode(axis));
+    const code = axisCode(axis);
+    this.axisTicks.delete(code);
+    this.wasm.clearAxisTicks(code);
     this.requestRender();
     return this;
   }
@@ -2070,7 +2455,13 @@ export class WebPlot {
 
   setAxisLimitsConstraints(axis, minValue, maxValue, options = {}) {
     this._assertReady();
-    this.wasm.setAxisLimitsConstraints(axisCode(axis), options.enabled !== false, minValue, maxValue);
+    const code = axisCode(axis);
+    this.axisLimitsConstraints.set(code, {
+      enabled: options.enabled !== false,
+      min: Number(minValue),
+      max: Number(maxValue),
+    });
+    this.wasm.setAxisLimitsConstraints(code, options.enabled !== false, minValue, maxValue);
     this.requestRender();
     return this;
   }
@@ -2081,7 +2472,13 @@ export class WebPlot {
 
   setAxisZoomConstraints(axis, minZoom, maxZoom, options = {}) {
     this._assertReady();
-    this.wasm.setAxisZoomConstraints(axisCode(axis), options.enabled !== false, minZoom, maxZoom);
+    const code = axisCode(axis);
+    this.axisZoomConstraints.set(code, {
+      enabled: options.enabled !== false,
+      min: Number(minZoom),
+      max: Number(maxZoom),
+    });
+    this.wasm.setAxisZoomConstraints(code, options.enabled !== false, minZoom, maxZoom);
     this.requestRender();
     return this;
   }
@@ -2092,7 +2489,11 @@ export class WebPlot {
 
   setAxisLink(axis, targetAxis = null) {
     this._assertReady();
-    this.wasm.setAxisLink(axisCode(axis), targetAxis == null ? null : axisCode(targetAxis));
+    const code = axisCode(axis);
+    const target = targetAxis == null ? null : axisCode(targetAxis);
+    if (target == null) this.axisLinks.delete(code);
+    else this.axisLinks.set(code, target);
+    this.wasm.setAxisLink(code, target);
     this.requestRender();
     return this;
   }
@@ -2107,8 +2508,13 @@ export class WebPlot {
     this.subplotCols = Math.max(1, Number(cols) | 0);
     this.subplotFlags = subplotFlagsFromOptions(options);
     this.wasm.setSubplots(this.subplotRows, this.subplotCols, this.subplotFlags);
+    this._hideLinkedCrosshair();
     this.requestRender();
     return this;
+  }
+
+  set_subplots_config(options = {}) {
+    return this.setSubplots(options.rows ?? 1, options.cols ?? 1, options);
   }
 
   setAlignedGroup(groupId, options = {}) {
@@ -2121,6 +2527,225 @@ export class WebPlot {
     this.wasm.setAlignedGroup(this.alignedGroup.groupId, this.alignedGroup.enabled, this.alignedGroup.vertical);
     this.requestRender();
     return this;
+  }
+
+  set_aligned_group(groupId, options = {}) {
+    return this.setAlignedGroup(groupId, options);
+  }
+
+  setTheme(name = "nbimplot") {
+    this.themeName = String(name || "nbimplot");
+    if (this.wrapper) this.wrapper.dataset.nbimplotTheme = this.themeName;
+    this.requestRender();
+    return this;
+  }
+
+  set_theme(name = "nbimplot") {
+    return this.setTheme(name);
+  }
+
+  setLinkedCrosshair(groupId = "default", options = {}) {
+    const previous = this.linkedCrosshair.groupId;
+    if (previous) {
+      const group = linkedCrosshairGroups.get(previous);
+      if (group) {
+        group.delete(this);
+        if (group.size === 0) linkedCrosshairGroups.delete(previous);
+      }
+    }
+    const axis = String(options.axis || "x").toLowerCase();
+    this.linkedCrosshair = {
+      enabled: options.enabled !== false,
+      groupId: String(groupId || "default"),
+      axis: axis === "y" || axis === "xy" ? axis : "x",
+    };
+    if (this.linkedCrosshair.enabled) {
+      linkedCrosshairGroup(this.linkedCrosshair.groupId).add(this);
+    } else {
+      this._hideLinkedCrosshair();
+    }
+    return this;
+  }
+
+  set_linked_crosshair(groupId = "default", options = {}) {
+    return this.setLinkedCrosshair(groupId, options);
+  }
+
+  getState(options = {}) {
+    const includeData = Boolean(options.includeData ?? options.include_data);
+    const state = {
+      version: 1,
+      width: this.width,
+      height: this.height,
+      title: this.title,
+      plotFlags: this.plotFlags,
+      axisScaleX: resolveScaleName(this.axisScaleX),
+      axisScaleY: resolveScaleName(this.axisScaleY),
+      colormap: this.colormapName,
+      theme: this.themeName,
+      view: this.view ? { ...this.view } : null,
+      subplots: { rows: this.subplotRows, cols: this.subplotCols, flags: this.subplotFlags },
+      alignedGroup: this.alignedGroup ? { ...this.alignedGroup } : null,
+      linkedCrosshair: { ...this.linkedCrosshair },
+      axisState: this.axisState.map((item) => ({ enabled: item.enabled, scale: resolveScaleName(item.scale) })),
+      axisLabels: [...this.axisLabels],
+      axisFormats: [...this.axisFormats],
+      axisLinks: Object.fromEntries([...this.axisLinks.entries()].map(([axis, target]) => [axis, target])),
+      series: [],
+      primitives: [],
+    };
+    if (includeData) {
+      state.axisTicks = Object.fromEntries(
+        [...this.axisTicks.entries()].map(([axis, cfg]) => [
+          axis,
+          { ticks: Array.from(cfg.ticks), labels: [...cfg.labels], keepDefault: cfg.keepDefault },
+        ]),
+      );
+      state.axisLimitsConstraints = Object.fromEntries([...this.axisLimitsConstraints.entries()]);
+      state.axisZoomConstraints = Object.fromEntries([...this.axisZoomConstraints.entries()]);
+    }
+    for (const record of this.seriesByToken.values()) {
+      const item = {
+        token: record.token,
+        name: record.name,
+        subplotIndex: record.subplotIndex,
+        xAxis: resolveAxisName(record.xAxis),
+        yAxis: resolveAxisName(record.yAxis),
+        visible: record.visible,
+        capacity: record.capacity || 0,
+        style: {
+          ...record.style,
+          marker: resolveMarkerName(markerCode(record.style?.marker ?? "none")),
+        },
+        hasX: Boolean(record.xData),
+        streamPaused: Boolean(record.streamPaused),
+        streamAutoRender: Boolean(record.streamAutoRender),
+        streamAutoscaleY: Boolean(record.streamAutoscaleY),
+      };
+      if (includeData) {
+        item.y = Array.from(record.data || []);
+        if (record.xData) item.x = Array.from(record.xData);
+      }
+      state.series.push(item);
+    }
+    if (includeData) {
+      for (const record of this.primitiveRecords.values()) {
+        state.primitives.push({
+          kind: record.kind,
+          payload: { ...record.payload, buffers: undefined },
+          buffers: record.buffers.map((buffer) => Array.from(buffer)),
+          visible: record.visible,
+        });
+      }
+    }
+    return state;
+  }
+
+  get_state(options = {}) {
+    return this.getState(options);
+  }
+
+  setState(state = {}) {
+    this._assertReady();
+    if (state.title != null) this.title = String(state.title);
+    if (state.width != null) this.width = Math.max(120, Number(state.width));
+    if (state.height != null) this.height = Math.max(100, Number(state.height));
+    if (state.subplots) {
+      this.setSubplots(state.subplots.rows ?? 1, state.subplots.cols ?? 1, { flags: state.subplots.flags ?? 0 });
+    }
+    if (state.plotFlags != null || state.plot_flags != null) {
+      this.plotFlags = Number(state.plotFlags ?? state.plot_flags) | 0;
+      this.wasm.setPlotOptions(this.plotFlags, this.axisScaleX, this.axisScaleY);
+    }
+    if (state.axisState) {
+      state.axisState.forEach((cfg, axis) => {
+        if (!cfg) return;
+        this.setAxisState(resolveAxisName(axis), { enabled: cfg.enabled, scale: cfg.scale || "linear" });
+      });
+    }
+    if (state.axisLabels) {
+      state.axisLabels.forEach((label, axis) => this.setAxisLabel(resolveAxisName(axis), label || ""));
+    }
+    if (state.axisFormats) {
+      state.axisFormats.forEach((format, axis) => this.setAxisFormat(resolveAxisName(axis), format || ""));
+    }
+    if (state.axisLinks) {
+      for (const [axis, target] of Object.entries(state.axisLinks)) {
+        this.setAxisLink(resolveAxisName(axis), resolveAxisName(target));
+      }
+    }
+    if (state.axisTicks) {
+      for (const [axis, cfg] of Object.entries(state.axisTicks)) {
+        if (!cfg) continue;
+        this.setAxisTicks(resolveAxisName(axis), new Float32Array(cfg.ticks || []), {
+          labels: cfg.labels || [],
+          keepDefault: Boolean(cfg.keepDefault ?? cfg.keep_default),
+        });
+      }
+    }
+    if (state.axisLimitsConstraints) {
+      for (const [axis, cfg] of Object.entries(state.axisLimitsConstraints)) {
+        if (!cfg) continue;
+        this.setAxisLimitsConstraints(resolveAxisName(axis), cfg.min, cfg.max, { enabled: cfg.enabled !== false });
+      }
+    }
+    if (state.axisZoomConstraints) {
+      for (const [axis, cfg] of Object.entries(state.axisZoomConstraints)) {
+        if (!cfg) continue;
+        this.setAxisZoomConstraints(resolveAxisName(axis), cfg.min, cfg.max, { enabled: cfg.enabled !== false });
+      }
+    }
+    if (state.alignedGroup) {
+      this.setAlignedGroup(state.alignedGroup.groupId, state.alignedGroup);
+    }
+    if (state.theme) this.setTheme(state.theme);
+    if (state.colormap != null) this.setColormap(state.colormap);
+    if (state.linkedCrosshair) {
+      this.setLinkedCrosshair(state.linkedCrosshair.groupId || "default", state.linkedCrosshair);
+    }
+    if (state.view) {
+      this.setView(state.view.xMin ?? state.view.x_min, state.view.xMax ?? state.view.x_max, state.view.yMin ?? state.view.y_min, state.view.yMax ?? state.view.y_max);
+    }
+    for (const item of state.series || []) {
+      if (!item || !item.y) continue;
+      const handle = this.line(item.name || "series", new Float32Array(item.y), {
+        x: item.x ? new Float32Array(item.x) : undefined,
+        subplotIndex: item.subplotIndex ?? item.subplot_index ?? 0,
+        xAxis: item.xAxis ?? item.x_axis ?? "x1",
+        yAxis: item.yAxis ?? item.y_axis ?? "y1",
+        maxPoints: item.capacity ?? item.maxPoints ?? 0,
+        visible: item.visible !== false,
+        ...(item.style || {}),
+      });
+      handle.setStreamOptions({
+        autoRender: Boolean(item.streamAutoRender ?? item.stream_auto_render),
+        autoscaleY: Boolean(item.streamAutoscaleY ?? item.stream_autoscale_y),
+      });
+      if (item.streamPaused ?? item.stream_paused) handle.pause();
+    }
+    for (const item of state.primitives || []) {
+      if (!item || !item.kind) continue;
+      this.primitive(item.kind, item.payload || {}, (item.buffers || []).map((buffer) => new Float32Array(buffer)));
+    }
+    this._resize();
+    this.requestRender();
+    return this;
+  }
+
+  set_state(state = {}) {
+    return this.setState(state);
+  }
+
+  exportJSONState(options = {}) {
+    const text = JSON.stringify(this.getState(options), null, 2);
+    if (options.download || options.filename) {
+      downloadBlob(new Blob([text], { type: "application/json;charset=utf-8" }), sanitizeJsonFilename(options.filename));
+    }
+    return text;
+  }
+
+  export_json_state(options = {}) {
+    return this.exportJSONState(options);
   }
 
   getView() {
@@ -2318,6 +2943,13 @@ export class WebPlot {
       window.cancelAnimationFrame(this.rafId);
       this.rafId = 0;
     }
+    if (this.linkedCrosshair.groupId) {
+      const group = linkedCrosshairGroups.get(this.linkedCrosshair.groupId);
+      if (group) {
+        group.delete(this);
+        if (group.size === 0) linkedCrosshairGroups.delete(this.linkedCrosshair.groupId);
+      }
+    }
     if (this.resizeObserver) {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
@@ -2333,6 +2965,8 @@ export class WebPlot {
     if (this.wasm) {
       this.wasm.destroy();
     }
+    this.seriesByToken.clear();
+    this.primitiveRecords.clear();
     this.wrapper.remove();
   }
 }
@@ -2342,4 +2976,28 @@ export async function createPlot(target, options = {}) {
   return plot.init();
 }
 
+export async function createDashboard(target, options = {}) {
+  const rows = Math.max(1, Number(options.rows || 1) | 0);
+  const cols = Math.max(1, Number(options.cols || 1) | 0);
+  const plot = await createPlot(target, {
+    ...options,
+    title: options.title || "Dashboard",
+    width: options.width || 1100,
+    height: options.height || 650,
+    subplotRows: rows,
+    subplotCols: cols,
+    linkAllX: options.linkX !== false,
+    linkAllY: Boolean(options.linkY),
+    crosshairs: options.crosshairs !== false,
+  });
+  if (options.theme !== false) {
+    plot.setTheme(options.theme || "nbimplot");
+  }
+  if (options.linkedCrosshair !== false) {
+    plot.setLinkedCrosshair(options.crosshairGroup || "dashboard", { axis: options.crosshairAxis || "x" });
+  }
+  return plot;
+}
+
 export const Plot = WebPlot;
+export const Dashboard = createDashboard;

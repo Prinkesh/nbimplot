@@ -1,4 +1,4 @@
-import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=png-export";
+import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=feature-dashboard";
 
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
@@ -26,6 +26,7 @@ const state = {
   streamPlot: null,
   streamSample: 0,
   streaming: false,
+  lastSelectionHash: "",
   observer: null,
   totalExamples: 0,
   activeColormap: "Viridis",
@@ -193,6 +194,7 @@ async function mountPlot(id, options = {}) {
     crosshairs: true,
     ...options,
   });
+  plot.setTheme("nbimplot");
   state.plots.push(plot);
   state.plotById.set(id, plot);
   return plot;
@@ -391,7 +393,13 @@ async function buildLineLod() {
   plot.onSelection((event) => {
     if (!interactionReadout) return;
     const exact = plot.indicesForSelection(event, handle);
-    interactionReadout.textContent = `Selection: x=[${event.xMin.toFixed(3)}, ${event.xMax.toFixed(3)}], exact signal points=${exact.length.toLocaleString()}`;
+    const selectionHash = `${event.xMin}:${event.xMax}:${event.yMin}:${event.yMax}`;
+    if (selectionHash !== state.lastSelectionHash) {
+      state.lastSelectionHash = selectionHash;
+      plot.highlightSelection(event, handle, { name: "selected", size: 5 });
+    }
+    const csv = plot.exportCSVSelection(event, handle);
+    interactionReadout.textContent = `Selection: x=[${event.xMin.toFixed(3)}, ${event.xMax.toFixed(3)}], exact signal points=${exact.length.toLocaleString()}, CSV bytes=${csv.length.toLocaleString()}`;
   });
   plot.onPerfStats((stats) => {
     if (!frameMs) return;
@@ -411,16 +419,21 @@ async function buildStreaming() {
   plot.setAxisLabel("x1", "sample");
   plot.setAxisLabel("y1", "tick");
   const initial = new Float32Array(256);
+  const initialX = new Float32Array(256);
   for (let i = 0; i < initial.length; i += 1) {
+    initialX[i] = i;
     initial[i] = Math.sin(i * 0.06) + 0.15 * Math.sin(i * 0.31);
   }
   state.streamSample = initial.length;
   state.streamHandle = plot.streamLine("ticks", {
     capacity: 12_000,
     initial,
+    x: initialX,
+    autoRender: true,
     color: "#b74b2b",
     lineWeight: 2,
   });
+  state.streamHandle.setStreamOptions({ autoRender: true });
   state.streamPlot = plot;
   return plot;
 }
@@ -428,12 +441,14 @@ async function buildStreaming() {
 function appendStreamChunk() {
   if (!state.streamHandle) return;
   const chunk = new Float32Array(96);
+  const chunkX = new Float32Array(96);
   for (let i = 0; i < chunk.length; i += 1) {
     const t = state.streamSample + i;
+    chunkX[i] = t;
     chunk[i] = Math.sin(t * 0.035) + 0.24 * Math.sin(t * 0.19) + 0.08 * Math.cos(t * 0.006);
   }
   state.streamSample += chunk.length;
-  state.streamHandle.append(chunk);
+  state.streamHandle.append(chunk, { x: chunkX });
 }
 
 async function buildScatter() {
@@ -650,6 +665,7 @@ async function buildSubplots() {
   }
   const plot = await mountPlot("subplots-plot", { title: "Linked 2x2 Subplots" });
   plot.setSubplots(2, 2, { linkAllX: true, shareItems: false });
+  plot.setLinkedCrosshair("subplot-demo", { axis: "x" });
   plot.line("trend", a, { subplotIndex: 0, color: "#1f6f66" });
   plot.scatter("phase", b, { x, subplotIndex: 1 });
   plot.bars("magnitude", c.subarray(0, 64), { subplotIndex: 2 });
@@ -720,6 +736,8 @@ async function buildAdvancedApi() {
   });
   plot.setPlotFlags({ noLegend: false, noMenus: false, noBoxSelect: false, crosshairs: true });
   plot.setSubplots(1, 2, { linkAllX: true, shareItems: false });
+  plot.setTheme("notebook");
+  plot.setLinkedCrosshair("advanced-api-demo", { axis: "xy" });
   plot.setAlignedGroup("advanced-api-demo", { enabled: true, vertical: true });
   plot.setSecondaryAxes({ x2: true, y2: true });
   plot.setTimeAxis("x1");
@@ -791,7 +809,9 @@ async function buildAdvancedApi() {
   plot.onSelection((event) => {
     if (!interactionReadout) return;
     const exact = plot.selectionIndices(event, handle);
-    interactionReadout.textContent = `Advanced selection: ${exact.length.toLocaleString()} primary samples`;
+    plot.highlightSelection(event, handle, { name: "advanced selection", size: 5 });
+    const csv = plot.exportCSVSelection(event, handle);
+    interactionReadout.textContent = `Advanced selection: ${exact.length.toLocaleString()} primary samples, CSV bytes=${csv.length.toLocaleString()}`;
   });
   plot.onPerfStats((stats) => {
     if (!frameMs) return;
@@ -801,8 +821,15 @@ async function buildAdvancedApi() {
 
   const view = plot.getView();
   const perf = plot.getPerfStats();
+  const stateSnapshot = plot.getState({ includeData: true });
+  const jsonSnapshot = plot.exportJSONState({ includeData: false });
+  plot.setState({
+    theme: stateSnapshot.theme,
+    colormap: stateSnapshot.colormap,
+    linkedCrosshair: stateSnapshot.linkedCrosshair,
+  });
   if (interactionReadout && view && perf) {
-    interactionReadout.textContent = `Initial advanced view ready; draw=${Math.round(perf.drawPoints).toLocaleString()} points`;
+    interactionReadout.textContent = `Initial advanced view ready; draw=${Math.round(perf.drawPoints).toLocaleString()} points, state JSON=${jsonSnapshot.length.toLocaleString()} bytes`;
   }
   plot.requestRender();
   plot.draw();
