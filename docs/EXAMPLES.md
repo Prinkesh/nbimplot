@@ -12,6 +12,23 @@ import numpy as np
 import nbimplot as ip
 ```
 
+## Notebook Cell Rendering
+
+`nbimplot` plots are Jupyter widgets. If a plot-like object is the last
+expression in a notebook cell, Jupyter renders the ImPlot/WASM canvas directly:
+
+```python
+t = np.linspace(0, 20, 20_000, dtype=np.float32)
+y = np.sin(t).astype(np.float32)
+
+p = ip.Plot(width=900, height=360, title="Last Expression Render")
+p.line("signal", y, x=t)
+p
+```
+
+Use `p.show()` when the cell continues after the display call. `Subplots`,
+`AlignedPlots`, and `Dashboard` support the same last-expression display path.
+
 ## Line and In-Place Updates
 
 ```python

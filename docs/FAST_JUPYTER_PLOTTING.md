@@ -33,6 +33,17 @@ h = p.line("signal", y, x=x)
 p.show()
 ```
 
+You can also render by leaving the plot object as the final expression in the
+cell:
+
+```python
+p = ip.Plot(width=900, height=450, title="Signal")
+p.line("signal", y, x=x)
+p
+```
+
+Use `p.show()` when displaying before additional code or printed output.
+
 ## Update Existing Data
 
 ```python

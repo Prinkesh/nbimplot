@@ -122,6 +122,32 @@ def _get_wasm_assets() -> tuple[str | None, bytes | None, str | None]:
         return _WASM_ASSET_CACHE
 
 
+def _mime_requested(mimetype: str, kwargs: dict[str, Any]) -> bool:
+    include = kwargs.get("include")
+    exclude = kwargs.get("exclude")
+    if include is not None and mimetype not in include:
+        return False
+    if exclude is not None and mimetype in exclude:
+        return False
+    return True
+
+
+def _with_text_plain(
+    bundle: tuple[dict[str, Any], dict[str, Any]] | None,
+    text: str,
+    kwargs: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    if bundle is None:
+        return None
+    data, metadata = bundle
+    data = dict(data)
+    if _mime_requested("text/plain", kwargs):
+        data["text/plain"] = text
+    else:
+        data.pop("text/plain", None)
+    return data, metadata
+
+
 def _to_float32_1d(data: Any, *, arg_name: str) -> np.ndarray:
     arr = np.asarray(data)
     if arr.ndim != 1:
@@ -2326,6 +2352,16 @@ class Plot(anywidget.AnyWidget):
         display(self)
         return None
 
+    def __repr__(self) -> str:
+        title = f", title={self.title!r}" if self.title else ""
+        return (
+            f"nbimplot.Plot(width={self.width}, height={self.height}{title}, "
+            f"series={len(self._series)}, primitives={len(self._primitives)}, renderer='wasm-implot')"
+        )
+
+    def _repr_mimebundle_(self, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        return _with_text_plain(super()._repr_mimebundle_(**kwargs), repr(self), kwargs)
+
     def close(self) -> None:
         if not getattr(self, "_closed", True):
             self.send({"type": "dispose"})
@@ -3064,6 +3100,16 @@ class Subplots:
     def show(self) -> None:
         self._plot.show()
         return None
+
+    def __repr__(self) -> str:
+        cls_name = type(self).__name__
+        return (
+            f"nbimplot.{cls_name}(rows={self.rows}, cols={self.cols}, title={self.title!r}, "
+            f"renderer='wasm-implot')"
+        )
+
+    def _repr_mimebundle_(self, **kwargs: Any) -> tuple[dict[str, Any], dict[str, Any]] | None:
+        return _with_text_plain(self._plot._repr_mimebundle_(**kwargs), repr(self), kwargs)
 
     def render(self) -> None:
         self._plot.render()

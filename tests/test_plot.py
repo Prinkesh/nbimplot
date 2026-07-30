@@ -993,3 +993,40 @@ def test_show_returns_none_to_prevent_double_display():
         result = sub.show()
     assert result is None
     assert mocked_display.call_count == 1
+
+
+def test_plot_has_notebook_cell_renderer_mimebundle():
+    plot = ip.Plot(width=640, height=320, title="Cell Renderer")
+    _capture_messages(plot)
+    plot.line("mid", np.arange(5, dtype=np.float32))
+
+    bundle = plot._repr_mimebundle_()
+    assert bundle is not None
+    data, metadata = bundle
+
+    assert metadata == {}
+    assert "application/vnd.jupyter.widget-view+json" in data
+    assert data["application/vnd.jupyter.widget-view+json"]["version_major"] == 2
+    assert data["text/plain"] == (
+        "nbimplot.Plot(width=640, height=320, title='Cell Renderer', "
+        "series=1, primitives=0, renderer='wasm-implot')"
+    )
+
+    data, _ = plot._repr_mimebundle_(exclude=["text/plain"])
+    assert "text/plain" not in data
+
+
+def test_subplot_wrappers_delegate_notebook_cell_renderer():
+    sub = ip.Subplots(2, 2, title="Grid")
+    bundle = sub._repr_mimebundle_()
+    assert bundle is not None
+    data, _ = bundle
+    assert "application/vnd.jupyter.widget-view+json" in data
+    assert data["text/plain"] == "nbimplot.Subplots(rows=2, cols=2, title='Grid', renderer='wasm-implot')"
+
+    dash = ip.Dashboard(1, 2, title="Desk")
+    bundle = dash._repr_mimebundle_()
+    assert bundle is not None
+    data, _ = bundle
+    assert "application/vnd.jupyter.widget-view+json" in data
+    assert data["text/plain"] == "nbimplot.Dashboard(rows=1, cols=2, title='Desk', renderer='wasm-implot')"

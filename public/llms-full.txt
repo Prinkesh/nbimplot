@@ -78,6 +78,18 @@ h = p.line("mid", y, x=x)
 p.show()
 ```
 
+Notebook cell rendering:
+
+```python
+p = ip.Plot(width=900, height=450, title="Signal")
+p.line("mid", y, x=x)
+p
+```
+
+`Plot`, `Subplots`, `AlignedPlots`, and `Dashboard` provide Jupyter widget MIME
+bundles for last-expression cell rendering. Use `p.show()` when displaying
+before later code, print output, tables, or another final expression.
+
 Update existing data:
 
 ```python

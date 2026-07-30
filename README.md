@@ -82,6 +82,21 @@ h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
 ```
 
+## Notebook Cell Renderer
+
+`Plot`, `Subplots`, `AlignedPlots`, and `Dashboard` implement a Jupyter widget
+MIME renderer. Put the object as the last expression in a notebook cell to
+render it directly:
+
+```python
+p = ip.Plot(width=900, height=450, title="Cell renderer")
+p.line("mid", y, x=x)
+p
+```
+
+Use `p.show()` when you want to display the plot before the last line of a cell,
+or when the final expression is a printout, table, or another object.
+
 ## Direct Web App Usage
 
 Use `@nbimplot/web` when you want ImPlot/WASM rendering in a normal browser
