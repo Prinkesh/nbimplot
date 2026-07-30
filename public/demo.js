@@ -378,6 +378,19 @@ async function buildLineLod() {
   plot.hlines("baseline", new Float32Array([0]));
   plot.vlines("spike markers", new Float32Array([131.071, 262.142, 524.284, 786.426]));
   plot.tagY(0, { labelFmt: "zero", roundValue: false });
+  plot.onHover((event) => {
+    if (!interactionReadout) return;
+    interactionReadout.textContent = `Hover: ${event.seriesName} index=${event.index.toLocaleString()} x=${event.x.toFixed(3)} y=${event.y.toFixed(3)}`;
+  });
+  plot.onClick((event) => {
+    if (!interactionReadout) return;
+    interactionReadout.textContent = `Click: button=${event.button} x=${event.x.toFixed(3)} y=${event.y.toFixed(3)}`;
+  });
+  plot.onSelection((event) => {
+    if (!interactionReadout) return;
+    const exact = plot.indicesForSelection(event, handle);
+    interactionReadout.textContent = `Selection: x=[${event.xMin.toFixed(3)}, ${event.xMax.toFixed(3)}], exact signal points=${exact.length.toLocaleString()}`;
+  });
   plot.onPerfStats((stats) => {
     if (!frameMs) return;
     frameMs.textContent = `${stats.frameMs.toFixed(2)} ms | ${Math.round(stats.drawPoints).toLocaleString()} drawn`;

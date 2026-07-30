@@ -763,7 +763,8 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
                          const char *aligned_group_id,
                          std::int32_t aligned_group_vertical,
                          const char *colormap_name, PrimitiveView *primitives,
-                         float *selection_out6,
+                         float *selection_out6, float *hover_out8,
+                         float *click_out8,
                          std::uint32_t primitive_count) noexcept {
 #if NBIMPLOT_WITH_IMPLOT
   constexpr std::int32_t kPlotFlagNoLegend = 1 << 0;
@@ -792,6 +793,16 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
   if (selection_out6 != nullptr) {
     for (int i = 0; i < 6; ++i) {
       selection_out6[i] = 0.0f;
+    }
+  }
+  if (hover_out8 != nullptr) {
+    for (int i = 0; i < 8; ++i) {
+      hover_out8[i] = 0.0f;
+    }
+  }
+  if (click_out8 != nullptr) {
+    for (int i = 0; i < 8; ++i) {
+      click_out8[i] = 0.0f;
     }
   }
   if (emscripten_webgl_make_context_current(state->gl_ctx) != EMSCRIPTEN_RESULT_SUCCESS) {
@@ -1889,6 +1900,29 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
     Highlight best_highlight;
     bool has_highlight = false;
     double best_highlight_d2 = std::numeric_limits<double>::infinity();
+    std::uint32_t best_hover_series_id = 0U;
+    std::int32_t best_hover_subplot = subplot_index;
+    double best_hover_x = 0.0;
+    double best_hover_y = 0.0;
+    double best_hover_d2 = std::numeric_limits<double>::infinity();
+
+    auto consider_series_hover =
+        [&](const SeriesView &series, double x, double y, std::int32_t x_axis,
+            std::int32_t y_axis) {
+          const ImVec2 px = ImPlot::PlotToPixels(
+              x, y, static_cast<ImAxis>(x_axis), static_cast<ImAxis>(y_axis));
+          if (!is_finite_vec2(px)) {
+            return;
+          }
+          const double d2 = distance2(px, mouse_px);
+          if (d2 < best_hover_d2) {
+            best_hover_d2 = d2;
+            best_hover_series_id = series.id;
+            best_hover_subplot = subplot_index;
+            best_hover_x = x;
+            best_hover_y = y;
+          }
+        };
 
     auto consider_point_highlight =
         [&](double x, double y, std::int32_t x_axis, std::int32_t y_axis,
@@ -2039,6 +2073,7 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
                 : ("series_" + std::to_string(series.slot));
         lines.push_back(
             format_text("line %s: x=%.6g y=%.6g", label.c_str(), best_x, best_y));
+        consider_series_hover(series, best_x, best_y, x_axis, y_axis);
         consider_point_highlight(
             best_x, best_y, x_axis, y_axis,
             ImGui::ColorConvertFloat4ToU32(color_for_slot(series.slot)), 4.5f);
@@ -2727,6 +2762,33 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
     if (lines.empty()) {
       return;
     }
+    if (hover_out8 != nullptr && best_hover_series_id != 0U &&
+        best_hover_d2 <= 1600.0) {
+      hover_out8[0] = 1.0f;
+      hover_out8[1] = static_cast<float>(best_hover_series_id);
+      hover_out8[2] = static_cast<float>(best_hover_subplot);
+      hover_out8[3] = static_cast<float>(best_hover_x);
+      hover_out8[4] = static_cast<float>(best_hover_y);
+      hover_out8[5] = static_cast<float>(std::sqrt(best_hover_d2));
+    }
+    if (click_out8 != nullptr) {
+      std::int32_t clicked_button = -1;
+      if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        clicked_button = 0;
+      } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+        clicked_button = 1;
+      } else if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) {
+        clicked_button = 2;
+      }
+      if (clicked_button >= 0) {
+        click_out8[0] = 1.0f;
+        click_out8[1] = static_cast<float>(clicked_button);
+        click_out8[2] = static_cast<float>(subplot_index);
+        click_out8[3] = static_cast<float>(mouse_main.x);
+        click_out8[4] = static_cast<float>(mouse_main.y);
+        click_out8[5] = static_cast<float>(best_hover_series_id);
+      }
+    }
     ImGui::BeginTooltip();
     const std::size_t max_lines = 20U;
     const std::size_t count = std::min(lines.size(), max_lines);
@@ -2930,6 +2992,8 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
   (void)colormap_name;
   (void)primitives;
   (void)selection_out6;
+  (void)hover_out8;
+  (void)click_out8;
   (void)primitive_count;
   return false;
 #endif

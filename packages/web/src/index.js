@@ -793,6 +793,7 @@ class LineHandle {
     this.token = token >>> 0;
     this.capacity = Math.max(0, Number(options.capacity || 0) | 0);
     this.xData = options.xData || null;
+    this.record = options.record || null;
   }
 
   setData(y, options = {}) {
@@ -818,6 +819,10 @@ class LineHandle {
       throw new Error("Failed to update line data.");
     }
     this.xData = uploadX || null;
+    if (this.record) {
+      this.record.data = upload;
+      this.record.xData = uploadX || null;
+    }
     this.plot._afterDataChange();
     return this;
   }
@@ -827,8 +832,20 @@ class LineHandle {
     if (this.xData) {
       throw new Error("append is not supported for custom-x lines; use setData(y, { x }).");
     }
-    if (!this.plot.wasm.appendLineData(this.token, ensureVector(y, "y"), this.capacity)) {
+    const appended = ensureVector(y, "y");
+    if (!this.plot.wasm.appendLineData(this.token, appended, this.capacity)) {
       throw new Error("Failed to append line data.");
+    }
+    if (this.record) {
+      const total = this.record.data.length + appended.length;
+      let merged = new Float32Array(total);
+      merged.set(this.record.data, 0);
+      merged.set(appended, this.record.data.length);
+      if (this.capacity > 0 && merged.length > this.capacity) {
+        merged = merged.slice(merged.length - this.capacity);
+      }
+      this.record.data = merged;
+      this.record.xData = null;
     }
     this.plot._afterDataChange();
     return this;
@@ -837,6 +854,9 @@ class LineHandle {
   setVisible(visible) {
     this.plot._assertReady();
     this.plot.wasm.setSeriesVisible(this.token, Boolean(visible));
+    if (this.record) {
+      this.record.visible = Boolean(visible);
+    }
     this.plot.requestRender();
     return this;
   }
@@ -890,7 +910,11 @@ export class WebPlot {
     this.view = null;
     this.viewCallbacks = new Set();
     this.interactionCallbacks = new Set();
+    this.hoverCallbacks = new Set();
+    this.clickCallbacks = new Set();
+    this.selectionCallbacks = new Set();
     this.perfCallbacks = new Set();
+    this.seriesByToken = new Map();
     this.lastInteractionHash = "";
     this.plotFlags = plotFlagsFromOptions(options);
     this.axisScaleX = scaleCode(options.axisScaleX || "linear");
@@ -1127,27 +1151,117 @@ export class WebPlot {
   }
 
   _emitInteractions() {
-    if (this.interactionCallbacks.size === 0) return;
-    const tuples = this.wasm.getInteractions();
-    if (!(tuples instanceof Float32Array) || tuples.length === 0) return;
-    const payload = [];
-    for (let i = 0; i + 7 < tuples.length; i += 8) {
-      payload.push({
-        kind: tuples[i] | 0,
-        id: tuples[i + 1] | 0,
-        subplotIndex: tuples[i + 2] | 0,
-        active: (tuples[i + 3] | 0) !== 0,
-        v0: Number(tuples[i + 4]),
-        v1: Number(tuples[i + 5]),
-        v2: Number(tuples[i + 6]),
-        v3: Number(tuples[i + 7]),
-      });
+    if (
+      this.interactionCallbacks.size === 0 &&
+      this.hoverCallbacks.size === 0 &&
+      this.clickCallbacks.size === 0 &&
+      this.selectionCallbacks.size === 0
+    ) {
+      return;
     }
-    const hash = JSON.stringify(payload);
+    const tuples = this.wasm.getInteractions();
+    if (!(tuples instanceof Float32Array) || tuples.length === 0) {
+      this.lastInteractionHash = "";
+      return;
+    }
+    const payload = [];
+    const selectionSeries = [];
+    let selection = null;
+    let hover = null;
+    let click = null;
+    for (let i = 0; i + 7 < tuples.length; i += 8) {
+      const kind = tuples[i] | 0;
+      const id = tuples[i + 1] | 0;
+      const subplotIndex = tuples[i + 2] | 0;
+      const active = (tuples[i + 3] | 0) !== 0;
+      const v0 = Number(tuples[i + 4]);
+      const v1 = Number(tuples[i + 5]);
+      const v2 = Number(tuples[i + 6]);
+      const v3 = Number(tuples[i + 7]);
+      const record = this.seriesByToken.get(id) || null;
+      const event = {
+        kind,
+        id,
+        subplotIndex,
+        active,
+        v0,
+        v1,
+        v2,
+        v3,
+      };
+      if (record) {
+        event.seriesName = record.name;
+        event.seriesToken = record.token;
+      }
+      payload.push(event);
+
+      if (kind === 100) {
+        selection = {
+          subplotIndex,
+          xMin: Math.min(v0, v1),
+          xMax: Math.max(v0, v1),
+          yMin: Math.min(v2, v3),
+          yMax: Math.max(v2, v3),
+          series: [],
+        };
+      } else if (kind === 101) {
+        selectionSeries.push({
+          seriesToken: id,
+          seriesName: record ? record.name : "",
+          subplotIndex,
+          indexMin: Math.max(0, Math.round(Math.min(v0, v1))),
+          indexMax: Math.max(0, Math.round(Math.max(v0, v1))),
+          count: Math.max(0, Math.round(v2)),
+          hasX: v3 !== 0,
+        });
+      } else if (kind === 102) {
+        hover = {
+          seriesToken: id,
+          seriesName: record ? record.name : "",
+          subplotIndex,
+          active,
+          x: v0,
+          y: v1,
+          index: Math.round(v2),
+          distancePx: v3,
+        };
+      } else if (kind === 103) {
+        click = {
+          seriesToken: id,
+          seriesName: record ? record.name : "",
+          subplotIndex,
+          active,
+          x: v0,
+          y: v1,
+          button: Math.max(0, Math.round(v2)),
+          index: Math.round(v3),
+        };
+      }
+    }
+    if (selection) {
+      selection.series = selectionSeries.filter((entry) => entry.subplotIndex === selection.subplotIndex);
+    }
+    const enriched = { payload, selection, hover, click };
+    const hash = JSON.stringify(enriched);
     if (hash === this.lastInteractionHash) return;
     this.lastInteractionHash = hash;
     for (const callback of this.interactionCallbacks) {
       callback(payload, this);
+    }
+    if (selection) {
+      for (const callback of this.selectionCallbacks) {
+        callback(selection, this);
+      }
+    }
+    if (hover) {
+      for (const callback of this.hoverCallbacks) {
+        callback(hover, this);
+      }
+    }
+    if (click) {
+      for (const callback of this.clickCallbacks) {
+        callback(click, this);
+      }
     }
   }
 
@@ -1176,6 +1290,91 @@ export class WebPlot {
     return () => this.interactionCallbacks.delete(callback);
   }
 
+  onHover(callback) {
+    this.hoverCallbacks.add(callback);
+    return () => this.hoverCallbacks.delete(callback);
+  }
+
+  onClick(callback) {
+    this.clickCallbacks.add(callback);
+    return () => this.clickCallbacks.delete(callback);
+  }
+
+  onSelection(callback) {
+    this.selectionCallbacks.add(callback);
+    return () => this.selectionCallbacks.delete(callback);
+  }
+
+  onSelect(callback) {
+    return this.onSelection(callback);
+  }
+
+  indicesForSelection(selection, series = null) {
+    if (!selection || typeof selection !== "object") {
+      throw new TypeError("selection must be the object passed to onSelection/onSelect.");
+    }
+    const xMin = Number(selection.xMin ?? selection.x_min);
+    const xMax = Number(selection.xMax ?? selection.x_max);
+    const yMin = Number(selection.yMin ?? selection.y_min);
+    const yMax = Number(selection.yMax ?? selection.y_max);
+    if (![xMin, xMax, yMin, yMax].every(Number.isFinite)) {
+      throw new Error("selection must contain finite x/y bounds.");
+    }
+    const x0 = Math.min(xMin, xMax);
+    const x1 = Math.max(xMin, xMax);
+    const y0 = Math.min(yMin, yMax);
+    const y1 = Math.max(yMin, yMax);
+
+    const resolveRecords = () => {
+      if (series == null) return Array.from(this.seriesByToken.values());
+      const token = typeof series === "number" ? series : Number(series?.token ?? 0);
+      const record = this.seriesByToken.get(token);
+      if (!record) {
+        throw new Error(`Unknown series token: ${token}`);
+      }
+      return [record];
+    };
+
+    const exactForRecord = (record) => {
+      const y = record.data || new Float32Array(0);
+      const out = [];
+      if (record.xData) {
+        const x = record.xData;
+        for (let i = 0; i < Math.min(x.length, y.length); i += 1) {
+          const xv = x[i];
+          const yv = y[i];
+          if (Number.isFinite(xv) && Number.isFinite(yv) && xv >= x0 && xv <= x1 && yv >= y0 && yv <= y1) {
+            out.push(i);
+          }
+        }
+      } else {
+        const start = Math.max(0, Math.ceil(x0));
+        const stop = Math.min(y.length, Math.floor(x1) + 1);
+        for (let i = start; i < stop; i += 1) {
+          const yv = y[i];
+          if (Number.isFinite(yv) && yv >= y0 && yv <= y1) {
+            out.push(i);
+          }
+        }
+      }
+      return Uint32Array.from(out);
+    };
+
+    const records = resolveRecords();
+    if (series != null) {
+      return exactForRecord(records[0]);
+    }
+    const result = new Map();
+    for (const record of records) {
+      result.set(record.token, exactForRecord(record));
+    }
+    return result;
+  }
+
+  selectionIndices(selection, series = null) {
+    return this.indicesForSelection(selection, series);
+  }
+
   line(name, y, options = {}) {
     this._assertReady();
     const token = this.nextSeriesToken++;
@@ -1201,8 +1400,19 @@ export class WebPlot {
     if (options.visible === false || options.hidden === true) {
       this.wasm.setSeriesVisible(token, false);
     }
+    const record = {
+      token,
+      name: String(name || ""),
+      data: upload,
+      xData: uploadX || null,
+      subplotIndex: Number(options.subplotIndex ?? options.subplot_index ?? 0) | 0,
+      xAxis,
+      yAxis,
+      visible: !(options.visible === false || options.hidden === true),
+    };
+    this.seriesByToken.set(token, record);
     this._afterDataChange();
-    return new LineHandle(this, token, { capacity, xData: uploadX });
+    return new LineHandle(this, token, { capacity, xData: uploadX, record });
   }
 
   streamLine(name, options = {}) {

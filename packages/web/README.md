@@ -99,6 +99,11 @@ Core methods:
 - `plot.autoscale()`
 - `plot.setView(xMin, xMax, yMin, yMax)`
 - `plot.dispose()`
+- `plot.onHover(callback)`
+- `plot.onClick(callback)`
+- `plot.onSelection(callback)` / `plot.onSelect(callback)`
+- `plot.onInteraction(callback)` for raw 8-float WASM interaction tuples
+- `plot.indicesForSelection(selection, series?)`
 
 Plot primitives:
 
@@ -129,6 +134,29 @@ Use `Float32Array` for the fastest path:
 const y = new Float32Array(10_000_000);
 plot.line("large", y);
 ```
+
+## Interaction Callbacks
+
+```js
+plot.onHover((event) => {
+  console.log(event.seriesName, event.index, event.x, event.y);
+});
+
+plot.onClick((event) => {
+  console.log(event.button, event.x, event.y);
+});
+
+plot.onSelection((event) => {
+  const exact = plot.indicesForSelection(event);
+  for (const [seriesToken, indices] of exact) {
+    console.log(seriesToken, indices.length);
+  }
+});
+```
+
+Selection events include the ImPlot rectangle plus per-series x-index ranges from
+WASM. `indicesForSelection(...)` computes exact y-filtered indices only when
+called.
 
 For explicit x coordinates:
 

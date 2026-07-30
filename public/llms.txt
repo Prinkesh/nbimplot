@@ -9,6 +9,7 @@ Primary use cases:
 - Interactive million-point and multi-million-point line charts.
 - Browser/webapp plotting with the same WASM core through `@nbimplot/web`.
 - Scientific and engineering dashboards using ImPlot interactions, subplots, heatmaps, images, annotations, drag primitives, and streaming updates.
+- Callback-driven inspection with hover, click, selection, drag-tool, view-change, and performance events.
 
 Install:
 ```bash
@@ -30,6 +31,9 @@ p.show()
 
 h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
+
+p.on_hover(lambda plot, event: print(event["series_name"], event["index"]))
+p.on_select(lambda plot, event: print(plot.indices_for_selection(event)))
 ```
 
 Web example:

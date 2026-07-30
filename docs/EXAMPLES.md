@@ -41,6 +41,35 @@ h.append(chunk)
 p.render()
 ```
 
+## Hover, Click, And Selection Callbacks
+
+```python
+x = np.linspace(0, 50, 200_000, dtype=np.float32)
+y = (np.sin(x) + 0.15 * np.sin(11 * x)).astype(np.float32)
+
+p = ip.Plot(width=1000, height=420, title="Interactive Selection")
+h = p.line("signal", y, x=x)
+
+def on_hover(plot, event):
+    print("hover", event["series_name"], event["index"], event["x"], event["y"])
+
+def on_click(plot, event):
+    print("click", event["button"], event["x"], event["y"])
+
+def on_select(plot, event):
+    # The event contains fast WASM x-index ranges.
+    print(event["series"])
+
+    # Ask for exact y-filtered NumPy indices only when needed.
+    idx = plot.indices_for_selection(event, h)
+    print("exact selected points", idx.size)
+
+p.on_hover(on_hover)
+p.on_click(on_click)
+p.on_select(on_select)
+p.show()
+```
+
 ## Scatter / Bubbles
 
 ```python

@@ -32,6 +32,15 @@ npm install @nbimplot/web
   const h = plot.line("signal", y, { x, color: "#2563eb", lineWeight: 2 });
   plot.render();
 
+  plot.onHover((event) => {
+    console.log("hover", event.seriesName, event.index, event.x, event.y);
+  });
+
+  plot.onSelection((event) => {
+    const exact = plot.indicesForSelection(event);
+    console.log([...exact.entries()].map(([token, indices]) => [token, indices.length]));
+  });
+
   window.addEventListener("beforeunload", () => plot.dispose(), { once: true });
 </script>
 ```

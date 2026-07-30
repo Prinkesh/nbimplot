@@ -903,6 +903,7 @@ class PlotRuntime {
     this.colorBySlot = [];
     this.nextColorIndex = 0;
     this.nextSeriesToken = 1;
+    this.seriesByToken = new Map();
 
     this.view = {
       xMin: 0,
@@ -1969,6 +1970,7 @@ class PlotRuntime {
       existing.visible = !hidden;
       existing.version += 1;
       existing.lodCache = { key: "", points: [] };
+      this.seriesByToken.set(existing.token, existing);
       if (this.wasmReady) {
         this._syncLineDataToWasm(existing, false);
         this.wasm.setSeriesName(existing.token, existing.name);
@@ -2019,6 +2021,7 @@ class PlotRuntime {
     };
 
     this.series.set(record.id, record);
+    this.seriesByToken.set(record.token, record);
     this.seriesOrder.push(record.id);
     this.colorBySlot[slot] = color;
     this._refreshLegend();
@@ -2760,7 +2763,10 @@ class PlotRuntime {
     }
 
     const tools = [];
+    const selectionSeries = [];
     let selection = null;
+    let hover = null;
+    let click = null;
     for (let i = 0; i + 7 < tuples.length; i += 8) {
       const kind = tuples[i] | 0;
       const id = tuples[i + 1] | 0;
@@ -2770,6 +2776,7 @@ class PlotRuntime {
       const v1 = Number(tuples[i + 5]);
       const v2 = Number(tuples[i + 6]);
       const v3 = Number(tuples[i + 7]);
+      const series = this.seriesByToken.get(id) || null;
 
       if (kind === 100) {
         selection = {
@@ -2778,6 +2785,47 @@ class PlotRuntime {
           x_max: Math.max(v0, v1),
           y_min: Math.min(v2, v3),
           y_max: Math.max(v2, v3),
+        };
+        continue;
+      }
+      if (kind === 101) {
+        selectionSeries.push({
+          series_token: id,
+          series_id: series ? series.id : "",
+          series_name: series ? series.name : "",
+          subplot_index: subplotIndex,
+          index_min: Math.max(0, Math.round(Math.min(v0, v1))),
+          index_max: Math.max(0, Math.round(Math.max(v0, v1))),
+          count: Math.max(0, Math.round(v2)),
+          has_x: v3 !== 0,
+        });
+        continue;
+      }
+      if (kind === 102) {
+        hover = {
+          series_token: id,
+          series_id: series ? series.id : "",
+          series_name: series ? series.name : "",
+          subplot_index: subplotIndex,
+          active: active !== 0,
+          x: v0,
+          y: v1,
+          index: Math.round(v2),
+          distance_px: v3,
+        };
+        continue;
+      }
+      if (kind === 103) {
+        click = {
+          series_token: id,
+          series_id: series ? series.id : "",
+          series_name: series ? series.name : "",
+          subplot_index: subplotIndex,
+          active: active !== 0,
+          x: v0,
+          y: v1,
+          button: Math.max(0, Math.round(v2)),
+          index: Math.round(v3),
         };
         continue;
       }
@@ -2835,8 +2883,13 @@ class PlotRuntime {
       payload.type = toolType;
       tools.push(payload);
     }
+    if (selection && selectionSeries.length > 0) {
+      selection.series = selectionSeries.filter(
+        (entry) => entry.subplot_index === selection.subplot_index,
+      );
+    }
 
-    if (tools.length === 0 && selection == null) {
+    if (tools.length === 0 && selection == null && hover == null && click == null) {
       this.lastInteractionHash = "";
       return;
     }
@@ -2844,6 +2897,8 @@ class PlotRuntime {
       type: "interaction_update",
       tools,
       selection,
+      hover,
+      click,
     };
     const hash = JSON.stringify(message);
     if (hash === this.lastInteractionHash) {

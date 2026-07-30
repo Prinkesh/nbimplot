@@ -96,6 +96,11 @@ enum PrimitiveKind : std::int32_t {
   kPrimDragDropLegend = 32,
 };
 
+constexpr std::int32_t kInteractionSelection = 100;
+constexpr std::int32_t kInteractionSelectionSeries = 101;
+constexpr std::int32_t kInteractionHover = 102;
+constexpr std::int32_t kInteractionClick = 103;
+
 struct Primitive {
   std::uint32_t id = 0;
   std::int32_t kind = 0;
@@ -260,6 +265,111 @@ std::int32_t upper_bound_x_index(const Series &series, double value) {
   const auto it = std::upper_bound(series.raw_x.begin(), series.raw_x.end(),
                                    static_cast<float>(value));
   return static_cast<std::int32_t>(std::distance(series.raw_x.begin(), it));
+}
+
+struct RawPointLookup {
+  bool found = false;
+  std::int32_t index = -1;
+  float x = 0.0f;
+  float y = 0.0f;
+};
+
+RawPointLookup nearest_raw_point(const Series &series, double x_value,
+                                 double y_hint) {
+  RawPointLookup out;
+  if (series.raw.empty() || !std::isfinite(x_value)) {
+    return out;
+  }
+
+  auto consider = [&](std::int32_t idx) {
+    if (idx < 0 || idx >= static_cast<std::int32_t>(series.raw.size())) {
+      return;
+    }
+    const float x = has_custom_x(series)
+                        ? series.raw_x[static_cast<std::size_t>(idx)]
+                        : static_cast<float>(idx);
+    const float y = series.raw[static_cast<std::size_t>(idx)];
+    if (!std::isfinite(x) || !std::isfinite(y)) {
+      return;
+    }
+    const double current_score =
+        std::fabs(static_cast<double>(x) - x_value) +
+        1e-6 * std::fabs(static_cast<double>(y) - y_hint);
+    double best_score = std::numeric_limits<double>::infinity();
+    if (out.found) {
+      best_score =
+          std::fabs(static_cast<double>(out.x) - x_value) +
+          1e-6 * std::fabs(static_cast<double>(out.y) - y_hint);
+    }
+    if (!out.found || current_score < best_score) {
+      out.found = true;
+      out.index = idx;
+      out.x = x;
+      out.y = y;
+    }
+  };
+
+  if (has_custom_x(series)) {
+    const std::int32_t idx = lower_bound_x_index(series, x_value);
+    for (std::int32_t offset = -2; offset <= 2; ++offset) {
+      consider(idx + offset);
+    }
+  } else {
+    const std::int32_t idx =
+        static_cast<std::int32_t>(std::llround(x_value));
+    for (std::int32_t offset = -2; offset <= 2; ++offset) {
+      consider(idx + offset);
+    }
+  }
+  return out;
+}
+
+struct SelectionIndexRange {
+  bool found = false;
+  std::int32_t first = -1;
+  std::int32_t last = -1;
+  std::int32_t count = 0;
+  bool has_custom_x = false;
+};
+
+SelectionIndexRange selection_index_range(const Series &series, double x0,
+                                          double x1) {
+  SelectionIndexRange out;
+  if (series.raw.empty() || !std::isfinite(x0) || !std::isfinite(x1)) {
+    return out;
+  }
+  const double lo = std::min(x0, x1);
+  const double hi = std::max(x0, x1);
+  const std::int32_t n = static_cast<std::int32_t>(series.raw.size());
+  out.has_custom_x = has_custom_x(series);
+
+  if (out.has_custom_x) {
+    std::int32_t first = lower_bound_x_index(series, lo);
+    std::int32_t last = upper_bound_x_index(series, hi) - 1;
+    first = clamp_value<std::int32_t>(first, 0, n - 1);
+    last = clamp_value<std::int32_t>(last, 0, n - 1);
+    if (last < first) {
+      return out;
+    }
+    out.found = true;
+    out.first = first;
+    out.last = last;
+    out.count = last - first + 1;
+    return out;
+  }
+
+  std::int32_t first = static_cast<std::int32_t>(std::ceil(lo));
+  std::int32_t last = static_cast<std::int32_t>(std::floor(hi));
+  first = clamp_value<std::int32_t>(first, 0, n - 1);
+  last = clamp_value<std::int32_t>(last, 0, n - 1);
+  if (last < first) {
+    return out;
+  }
+  out.found = true;
+  out.first = first;
+  out.last = last;
+  out.count = last - first + 1;
+  return out;
 }
 
 void append_draw_point(std::vector<float> &draw_tuples, std::uint32_t slot,
@@ -1500,6 +1610,7 @@ std::uint32_t nbp_build_draw_data(std::uint32_t handle, std::uint32_t pixel_widt
     }
 
     nbimplot::SeriesView series_view;
+    series_view.id = series.id;
     series_view.slot = static_cast<std::int32_t>(series.slot);
     series_view.subplot_index = std::max(0, series.subplot_index);
     series_view.x_axis = clamp_value<std::int32_t>(series.x_axis, 0, 2);
@@ -1786,6 +1897,10 @@ std::int32_t nbp_render(std::uint32_t handle, const char *title_id) {
   }
 
   float selection_state[6] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+  float hover_state[8] = {0.0f, 0.0f, 0.0f, 0.0f,
+                          0.0f, 0.0f, 0.0f, 0.0f};
+  float click_state[8] = {0.0f, 0.0f, 0.0f, 0.0f,
+                          0.0f, 0.0f, 0.0f, 0.0f};
   std::array<const char *, 6> axis_label_ptrs = {nullptr, nullptr, nullptr,
                                                   nullptr, nullptr, nullptr};
   std::array<const char *, 6> axis_format_ptrs = {nullptr, nullptr, nullptr,
@@ -1839,7 +1954,7 @@ std::int32_t nbp_render(std::uint32_t handle, const char *title_id) {
       plot->aligned_group_vertical,
       plot->colormap_name.empty() ? nullptr : plot->colormap_name.c_str(),
       plot->primitive_views.empty() ? nullptr : plot->primitive_views.data(),
-      selection_state,
+      selection_state, hover_state, click_state,
       static_cast<std::uint32_t>(plot->primitive_views.size()));
   plot->last_render_ms = duration_to_ms(Clock::now() - render_start);
   plot->last_frame_ms = duration_to_ms(Clock::now() - frame_start);
@@ -1928,9 +2043,73 @@ std::int32_t nbp_render(std::uint32_t handle, const char *title_id) {
   }
 
   if (selection_state[0] > 0.5f) {
-    append_interaction(100, 0, static_cast<std::int32_t>(selection_state[1]), 1,
+    const std::int32_t selection_subplot =
+        static_cast<std::int32_t>(selection_state[1]);
+    append_interaction(kInteractionSelection, 0, selection_subplot, 1,
                        selection_state[2], selection_state[3], selection_state[4],
                        selection_state[5]);
+    for (const std::uint32_t series_id : plot->order) {
+      const auto it = plot->series_by_id.find(series_id);
+      if (it == plot->series_by_id.end()) {
+        continue;
+      }
+      const Series &series = it->second;
+      if (!series.visible || series.subplot_index != selection_subplot) {
+        continue;
+      }
+      const SelectionIndexRange range =
+          selection_index_range(series, selection_state[2], selection_state[3]);
+      if (!range.found) {
+        continue;
+      }
+      append_interaction(kInteractionSelectionSeries, series.id,
+                         selection_subplot, 1,
+                         static_cast<float>(range.first),
+                         static_cast<float>(range.last),
+                         static_cast<float>(range.count),
+                         range.has_custom_x ? 1.0f : 0.0f);
+    }
+  }
+
+  if (hover_state[0] > 0.5f) {
+    const std::uint32_t hover_series_id =
+        static_cast<std::uint32_t>(std::max(0.0f, hover_state[1]));
+    float hover_x = hover_state[3];
+    float hover_y = hover_state[4];
+    float hover_index = -1.0f;
+    const auto hover_it = plot->series_by_id.find(hover_series_id);
+    if (hover_it != plot->series_by_id.end()) {
+      const RawPointLookup point = nearest_raw_point(
+          hover_it->second, static_cast<double>(hover_state[3]),
+          static_cast<double>(hover_state[4]));
+      if (point.found) {
+        hover_x = point.x;
+        hover_y = point.y;
+        hover_index = static_cast<float>(point.index);
+      }
+    }
+    append_interaction(kInteractionHover, hover_series_id,
+                       static_cast<std::int32_t>(hover_state[2]), 1, hover_x,
+                       hover_y, hover_index, hover_state[5]);
+  }
+
+  if (click_state[0] > 0.5f) {
+    const std::uint32_t clicked_hover_series_id =
+        static_cast<std::uint32_t>(std::max(0.0f, click_state[5]));
+    float nearest_index = -1.0f;
+    const auto click_it = plot->series_by_id.find(clicked_hover_series_id);
+    if (click_it != plot->series_by_id.end()) {
+      const RawPointLookup point = nearest_raw_point(
+          click_it->second, static_cast<double>(click_state[3]),
+          static_cast<double>(click_state[4]));
+      if (point.found) {
+        nearest_index = static_cast<float>(point.index);
+      }
+    }
+    append_interaction(kInteractionClick, clicked_hover_series_id,
+                       static_cast<std::int32_t>(click_state[2]), 1,
+                       click_state[3], click_state[4], click_state[1],
+                       nearest_index);
   }
   if (ok) {
     plot->view_initialized = true;

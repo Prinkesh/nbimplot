@@ -49,6 +49,22 @@ p.render()
 
 If the new y array changes length, pass a replacement x array too.
 
+## Interaction Callbacks
+
+```python
+def on_select(plot, event):
+    exact = plot.indices_for_selection(event)
+    print({series_id: idx.size for series_id, idx in exact.items()})
+
+p.on_hover(lambda plot, event: print(event["series_name"], event["index"]))
+p.on_click(lambda plot, event: print(event["button"], event["x"], event["y"]))
+p.on_select(on_select)
+```
+
+Hover, click, and selection events come from the WASM/ImPlot interaction path.
+Selection events include fast per-series x-index ranges, and exact y-filtered
+NumPy indices are computed only when `indices_for_selection(...)` is called.
+
 ## Streaming
 
 Use `stream_line` when samples arrive in chunks and implicit sample index is acceptable:

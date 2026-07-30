@@ -29,8 +29,8 @@ const examples = [
     id: "line-lod-plot",
     section: "Performance",
     title: "Million Point Line + Custom X + LOD",
-    text: "Large time-series path using explicit x data and the default WASM min/max LOD pipeline. Pan, wheel zoom, double-click autoscale, and use the legend/right-click menu.",
-    code: 'const h = plot.line("signal", y, { x });\nh.setData(yNew, { x });\nplot.autoscale();',
+    text: "Large time-series path using explicit x data, WASM min/max LOD, and callback-driven hover/click/selection inspection.",
+    code: 'const h = plot.line("signal", y, { x });\nplot.onHover(console.log);\nplot.onSelection((e) => plot.indicesForSelection(e, h));',
   },
   {
     id: "streaming-plot",

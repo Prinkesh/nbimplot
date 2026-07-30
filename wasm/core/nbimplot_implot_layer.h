@@ -11,6 +11,7 @@ struct DrawSegmentView {
 };
 
 struct SeriesView {
+  std::uint32_t id = 0;
   std::int32_t slot = 0;
   std::int32_t subplot_index = 0;
   std::int32_t x_axis = 0;
@@ -89,6 +90,8 @@ public:
               const char *aligned_group_id, std::int32_t aligned_group_vertical,
               const char *colormap_name, PrimitiveView *primitives,
               float *selection_out6,
+              float *hover_out8,
+              float *click_out8,
               std::uint32_t primitive_count) noexcept;
 };
 

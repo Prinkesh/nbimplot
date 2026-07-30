@@ -592,6 +592,87 @@ def test_drag_tools_and_interaction_callbacks():
     assert selection_events[-1]["x_min"] == 1.0
 
 
+def test_hover_click_callbacks_and_exact_selection_indices():
+    plot = ip.Plot()
+    _capture_messages(plot)
+    x = np.array([0.0, 0.5, 1.5, 3.0, 4.0], dtype=np.float32)
+    y = np.array([1.0, -1.0, 2.0, 0.5, 3.0], dtype=np.float32)
+    handle = plot.line("custom", y, x=x)
+    plot.line("implicit", np.array([0.0, 2.0, 4.0, 1.0], dtype=np.float32))
+
+    hover_events = []
+    click_events = []
+    selection_events = []
+    plot.on_hover(lambda _p, payload: hover_events.append(payload))
+    plot.on_click(lambda _p, payload: click_events.append(payload))
+    plot.on_select(lambda _p, payload: selection_events.append(payload))
+
+    selection = {
+        "subplot_index": 0,
+        "x_min": 0.25,
+        "x_max": 3.2,
+        "y_min": 0.0,
+        "y_max": 2.1,
+        "series": [
+            {
+                "series_id": handle.series_id,
+                "series_name": "custom",
+                "series_token": 1,
+                "subplot_index": 0,
+                "index_min": 1,
+                "index_max": 3,
+                "count": 3,
+                "has_x": True,
+            }
+        ],
+    }
+    plot._handle_frontend_message(
+        plot,
+        {
+            "type": "interaction_update",
+            "tools": [],
+            "selection": selection,
+            "hover": {
+                "series_id": handle.series_id,
+                "series_name": "custom",
+                "series_token": 1,
+                "subplot_index": 0,
+                "active": True,
+                "x": 1.5,
+                "y": 2.0,
+                "index": 2,
+                "distance_px": 3.5,
+            },
+            "click": {
+                "series_id": handle.series_id,
+                "series_name": "custom",
+                "series_token": 1,
+                "subplot_index": 0,
+                "active": True,
+                "x": 1.5,
+                "y": 2.0,
+                "button": 0,
+                "index": 2,
+            },
+        },
+        None,
+    )
+
+    assert hover_events[-1]["series_name"] == "custom"
+    assert hover_events[-1]["index"] == 2
+    assert click_events[-1]["button"] == 0
+    assert selection_events[-1]["series"][0]["index_min"] == 1
+
+    np.testing.assert_array_equal(
+        plot.indices_for_selection(selection_events[-1], handle),
+        np.array([2, 3], dtype=np.int64),
+    )
+    all_indices = plot.selection_indices(selection_events[-1])
+    assert set(all_indices) == {handle.series_id, "s2"}
+    np.testing.assert_array_equal(all_indices[handle.series_id], np.array([2, 3], dtype=np.int64))
+    np.testing.assert_array_equal(all_indices["s2"], np.array([1, 3], dtype=np.int64))
+
+
 def test_primitives_accept_axis_routing():
     import inspect
 

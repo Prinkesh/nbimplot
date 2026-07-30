@@ -53,7 +53,7 @@ python -m pip install -U nbimplot
 Minimum recommended widget/runtime stack:
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.10" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.11" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 ```
 
 ## Compatibility
@@ -151,6 +151,7 @@ GitHub Pages should be configured once as:
 - initial X/Y view auto-fits to available data
 - double-click inside plot area resets view (`autoscale`)
 - right-drag box zoom, wheel zoom, drag pan, legend toggle
+- hover, click, drag-tool, selection, view-change, and performance callbacks are exposed from the WASM/ImPlot event path
 
 ## Core API
 
@@ -193,6 +194,42 @@ Rules:
 - If a custom-x line keeps the same length, `h.set_data(y_new)` / `h.setData(yNew)` preserves the existing x buffer.
 - `x_axis` / `xAxis` selects the ImPlot axis slot (`x1`, `x2`, `x3`); it is not the x-data argument.
 - Streaming append uses implicit sample indices. For custom x streaming, update with `set_data(y, x=x)` / `setData(y, { x })`.
+
+## Interaction Callbacks
+
+```python
+selected = {}
+
+def on_hover(plot, event):
+    print(event["series_name"], event["index"], event["x"], event["y"])
+
+def on_click(plot, event):
+    print("clicked", event["button"], event["x"], event["y"])
+
+def on_select(plot, event):
+    selected["event"] = event
+    exact = plot.indices_for_selection(event)
+    print({series_id: idx.size for series_id, idx in exact.items()})
+
+p.on_hover(on_hover)
+p.on_click(on_click)
+p.on_select(on_select)
+```
+
+Selection callbacks include the ImPlot selection rectangle and per-series x-index
+ranges computed in WASM. `indices_for_selection(...)` applies the y bounds only
+when requested and returns exact NumPy index arrays.
+
+Standalone web apps expose the same interaction layer:
+
+```js
+plot.onHover((event) => console.log(event.seriesName, event.index, event.x, event.y));
+plot.onClick((event) => console.log(event.button, event.x, event.y));
+plot.onSelection((event) => {
+  const exact = plot.indicesForSelection(event);
+  console.log([...exact.entries()].map(([token, indices]) => [token, indices.length]));
+});
+```
 
 ## Common Examples
 
@@ -333,6 +370,10 @@ Search-focused guides:
 - `p.on_perf_stats(callback, interval_ms=500)`
 - `p.on_tool_change(callback)`
 - `p.on_selection_change(callback)`
+- `p.on_select(callback)`
+- `p.on_hover(callback)`
+- `p.on_click(callback)`
+- `p.indices_for_selection(selection, series=None)`
 
 ## Example Notebooks
 
@@ -352,7 +393,7 @@ Open the Colab notebook directly:
 This is usually a server-kernel env mismatch or stale lab assets.
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.10" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.11" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 jupyter lab clean
 ```
 

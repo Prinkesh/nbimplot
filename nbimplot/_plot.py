@@ -354,7 +354,9 @@ class Plot(anywidget.AnyWidget):
         self._view_callbacks: list[Callable[[Plot, dict[str, float]], None]] = []
         self._perf_callbacks: list[Callable[[Plot, dict[str, float]], None]] = []
         self._tool_callbacks: list[Callable[[Plot, dict[str, Any]], None]] = []
-        self._selection_callbacks: list[Callable[[Plot, dict[str, float]], None]] = []
+        self._selection_callbacks: list[Callable[[Plot, dict[str, Any]], None]] = []
+        self._hover_callbacks: list[Callable[[Plot, dict[str, Any]], None]] = []
+        self._click_callbacks: list[Callable[[Plot, dict[str, Any]], None]] = []
         self._perf_reporting_enabled = False
         self._perf_interval_ms = 500
         self._plot_flags = 0
@@ -1850,8 +1852,17 @@ class Plot(anywidget.AnyWidget):
     def on_tool_change(self, callback: Callable[[Plot, dict[str, Any]], None]) -> None:
         self._tool_callbacks.append(callback)
 
-    def on_selection_change(self, callback: Callable[[Plot, dict[str, float]], None]) -> None:
+    def on_selection_change(self, callback: Callable[[Plot, dict[str, Any]], None]) -> None:
         self._selection_callbacks.append(callback)
+
+    def on_select(self, callback: Callable[[Plot, dict[str, Any]], None]) -> None:
+        self.on_selection_change(callback)
+
+    def on_hover(self, callback: Callable[[Plot, dict[str, Any]], None]) -> None:
+        self._hover_callbacks.append(callback)
+
+    def on_click(self, callback: Callable[[Plot, dict[str, Any]], None]) -> None:
+        self._click_callbacks.append(callback)
 
     def on_perf_stats(
         self, callback: Callable[[Plot, dict[str, float]], None], *, interval_ms: int = 500
@@ -1869,6 +1880,78 @@ class Plot(anywidget.AnyWidget):
                 "interval_ms": self._perf_interval_ms,
             }
         )
+
+    def indices_for_selection(
+        self,
+        selection: dict[str, Any],
+        series: str | LineHandle | None = None,
+    ) -> dict[str, np.ndarray] | np.ndarray:
+        """Return exact raw point indices inside a selection rectangle.
+
+        The callback payload includes fast WASM-computed x-index ranges. This
+        helper applies the y bounds in Python only when the caller explicitly
+        asks for exact indices.
+        """
+        if not isinstance(selection, dict):
+            raise TypeError("selection must be the dict passed to on_select/on_selection_change.")
+        try:
+            x_min = float(selection["x_min"])
+            x_max = float(selection["x_max"])
+            y_min = float(selection["y_min"])
+            y_max = float(selection["y_max"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("selection must contain finite x_min/x_max/y_min/y_max values.") from exc
+        if not np.isfinite([x_min, x_max, y_min, y_max]).all():
+            raise ValueError("selection bounds must be finite.")
+        x0, x1 = sorted((x_min, x_max))
+        y0, y1 = sorted((y_min, y_max))
+
+        def _resolve_series_id(value: str | LineHandle) -> str:
+            if isinstance(value, LineHandle):
+                return value.series_id
+            raw = str(value)
+            if raw in self._series:
+                return raw
+            for sid, meta in self._series.items():
+                if meta.name == raw:
+                    return sid
+            raise KeyError(f"Unknown series: {raw!r}")
+
+        def _indices_for_meta(meta: _SeriesMeta) -> np.ndarray:
+            y = meta.data
+            if y.size == 0:
+                return np.empty(0, dtype=np.int64)
+            if meta.x_data is not None:
+                x = meta.x_data
+                start = int(np.searchsorted(x, x0, side="left"))
+                stop = int(np.searchsorted(x, x1, side="right"))
+                if stop <= start:
+                    return np.empty(0, dtype=np.int64)
+                window_y = y[start:stop]
+                window_x = x[start:stop]
+                mask = (
+                    np.isfinite(window_x)
+                    & np.isfinite(window_y)
+                    & (window_x >= x0)
+                    & (window_x <= x1)
+                    & (window_y >= y0)
+                    & (window_y <= y1)
+                )
+                return (np.nonzero(mask)[0] + start).astype(np.int64, copy=False)
+
+            start = max(0, int(np.ceil(x0)))
+            stop = min(int(y.size), int(np.floor(x1)) + 1)
+            if stop <= start:
+                return np.empty(0, dtype=np.int64)
+            window_y = y[start:stop]
+            mask = np.isfinite(window_y) & (window_y >= y0) & (window_y <= y1)
+            return (np.nonzero(mask)[0] + start).astype(np.int64, copy=False)
+
+        if series is not None:
+            return _indices_for_meta(self._series[_resolve_series_id(series)])
+        return {sid: _indices_for_meta(meta) for sid, meta in self._series.items()}
+
+    selection_indices = indices_for_selection
 
     def render(self) -> None:
         self._ensure_open()
@@ -2127,17 +2210,72 @@ class Plot(anywidget.AnyWidget):
             selection = content.get("selection")
             if isinstance(selection, dict) and self._selection_callbacks:
                 try:
+                    series_payload: list[dict[str, Any]] = []
+                    raw_series = selection.get("series", [])
+                    if isinstance(raw_series, list):
+                        for item in raw_series:
+                            if not isinstance(item, dict):
+                                continue
+                            series_payload.append(
+                                {
+                                    "series_id": str(item.get("series_id", "")),
+                                    "series_name": str(item.get("series_name", "")),
+                                    "series_token": int(item.get("series_token", 0)),
+                                    "subplot_index": int(item.get("subplot_index", 0)),
+                                    "index_min": int(item.get("index_min", -1)),
+                                    "index_max": int(item.get("index_max", -1)),
+                                    "count": int(item.get("count", 0)),
+                                    "has_x": bool(item.get("has_x", False)),
+                                }
+                            )
                     selection_payload = {
-                        "subplot_index": float(selection.get("subplot_index", 0.0)),
+                        "subplot_index": int(selection.get("subplot_index", 0)),
                         "x_min": float(selection.get("x_min", 0.0)),
                         "x_max": float(selection.get("x_max", 0.0)),
                         "y_min": float(selection.get("y_min", 0.0)),
                         "y_max": float(selection.get("y_max", 0.0)),
+                        "series": series_payload,
                     }
                 except (TypeError, ValueError):
                     return
                 for callback in self._selection_callbacks:
                     callback(self, selection_payload)
+            hover = content.get("hover")
+            if isinstance(hover, dict) and self._hover_callbacks:
+                try:
+                    hover_payload = {
+                        "series_id": str(hover.get("series_id", "")),
+                        "series_name": str(hover.get("series_name", "")),
+                        "series_token": int(hover.get("series_token", 0)),
+                        "subplot_index": int(hover.get("subplot_index", 0)),
+                        "active": bool(hover.get("active", True)),
+                        "x": float(hover.get("x", 0.0)),
+                        "y": float(hover.get("y", 0.0)),
+                        "index": int(hover.get("index", -1)),
+                        "distance_px": float(hover.get("distance_px", 0.0)),
+                    }
+                except (TypeError, ValueError):
+                    return
+                for callback in self._hover_callbacks:
+                    callback(self, hover_payload)
+            click = content.get("click")
+            if isinstance(click, dict) and self._click_callbacks:
+                try:
+                    click_payload = {
+                        "series_id": str(click.get("series_id", "")),
+                        "series_name": str(click.get("series_name", "")),
+                        "series_token": int(click.get("series_token", 0)),
+                        "subplot_index": int(click.get("subplot_index", 0)),
+                        "active": bool(click.get("active", True)),
+                        "x": float(click.get("x", 0.0)),
+                        "y": float(click.get("y", 0.0)),
+                        "button": int(click.get("button", 0)),
+                        "index": int(click.get("index", -1)),
+                    }
+                except (TypeError, ValueError):
+                    return
+                for callback in self._click_callbacks:
+                    callback(self, click_payload)
             return
         if msg_type != "view_change":
             return

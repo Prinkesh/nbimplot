@@ -208,6 +208,12 @@ ImPlot provides:
 - legend toggles
 - drag primitives
 
+nbimplot exposes ImPlot/WASM interaction callbacks:
+- Notebook: `p.on_hover(callback)`, `p.on_click(callback)`, `p.on_select(callback)`, `p.on_selection_change(callback)`, `p.on_tool_change(callback)`, `p.on_view_change(callback)`.
+- Web: `plot.onHover(callback)`, `plot.onClick(callback)`, `plot.onSelection(callback)`, `plot.onSelect(callback)`, `plot.onInteraction(callback)`, `plot.onViewChange(callback)`.
+- Selection events contain the ImPlot selection rectangle plus per-series x-index ranges.
+- Exact y-filtered raw indices are computed on demand with `p.indices_for_selection(selection, series=None)` or `plot.indicesForSelection(selection, series?)`.
+
 ## Heatmap Notes
 
 Disable heatmap cell labels by passing an empty label format:
