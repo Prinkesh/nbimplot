@@ -53,7 +53,7 @@ python -m pip install -U nbimplot
 Minimum recommended widget/runtime stack:
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.11" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.12" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 ```
 
 ## Compatibility
@@ -194,6 +194,25 @@ Rules:
 - If a custom-x line keeps the same length, `h.set_data(y_new)` / `h.setData(yNew)` preserves the existing x buffer.
 - `x_axis` / `xAxis` selects the ImPlot axis slot (`x1`, `x2`, `x3`); it is not the x-data argument.
 - Streaming append uses implicit sample indices. For custom x streaming, update with `set_data(y, x=x)` / `setData(y, { x })`.
+
+## PNG Export
+
+Notebook widgets can request a browser-side PNG download of the current canvas:
+
+```python
+p.export_png("nbimplot-signal.png")
+```
+
+Web apps can download directly or keep the image for app-specific workflows:
+
+```js
+await plot.downloadPNG("nbimplot-signal.png");
+const dataUrl = plot.toDataURL("image/png");
+const blob = await plot.toBlob("image/png");
+```
+
+Export redraws the existing WASM/ImPlot canvas immediately before reading pixels;
+it does not use a JavaScript plotting fallback.
 
 ## Interaction Callbacks
 
@@ -375,6 +394,7 @@ Search-focused guides:
 - `p.on_hover(callback)`
 - `p.on_click(callback)`
 - `p.indices_for_selection(selection, series=None)`
+- `p.export_png(filename="nbimplot.png")`
 
 ## Example Notebooks
 
@@ -394,7 +414,7 @@ Open the Colab notebook directly:
 This is usually a server-kernel env mismatch or stale lab assets.
 
 ```bash
-python -m pip install -U "nbimplot>=0.1.11" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
+python -m pip install -U "nbimplot>=0.1.12" "anywidget>=0.9.21" ipywidgets jupyterlab_widgets
 jupyter lab clean
 ```
 

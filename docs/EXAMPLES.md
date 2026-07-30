@@ -29,6 +29,15 @@ p.render()
 `line(..., x=x)` requires finite, sorted, equal-length `x` and `y` arrays.
 `x_axis="x2"` selects an ImPlot axis slot; it does not provide x data.
 
+## PNG Export
+
+```python
+p.export_png("line-update.png")
+```
+
+`export_png(...)` asks the active notebook frontend view to redraw the existing
+WASM/ImPlot canvas and download it as a PNG.
+
 ## Streaming Ring Buffer
 
 ```python

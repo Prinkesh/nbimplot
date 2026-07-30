@@ -1,6 +1,6 @@
-import createNbImPlotModule from "../wasm/nbimplot_wasm.js?v=aligned-plots-fix";
+import createNbImPlotModule from "../wasm/nbimplot_wasm.js?v=png-export";
 
-const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm?v=aligned-plots-fix", import.meta.url);
+const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm", import.meta.url);
 const LABEL_SEP = "\x1f";
 const PIE_FMT_SEP = "\x1e";
 const HEATMAP_META_SEP = "\x1d";
@@ -138,6 +138,28 @@ function ensureVector(value, name = "data") {
     throw new Error(`${name} must not be empty.`);
   }
   return out;
+}
+
+function dataUrlToBlob(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) {
+    return new Blob([], { type: "application/octet-stream" });
+  }
+  const header = dataUrl.slice(0, comma);
+  const payload = dataUrl.slice(comma + 1);
+  const mime = /^data:([^;,]+)/.exec(header)?.[1] || "application/octet-stream";
+  const binary = header.includes(";base64") ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function sanitizePngFilename(filename) {
+  const raw = String(filename || "nbimplot.png").trim() || "nbimplot.png";
+  const safe = raw.replace(/[\\/:*?"<>|]+/g, "_");
+  return /\.png$/i.test(safe) ? safe : `${safe}.png`;
 }
 
 function ensureLineX(value, yLength) {
@@ -1133,6 +1155,54 @@ export class WebPlot {
 
   render() {
     return this.draw();
+  }
+
+  toDataURL(type = "image/png", quality) {
+    this._assertReady();
+    this.draw();
+    return quality === undefined
+      ? this.canvas.toDataURL(type)
+      : this.canvas.toDataURL(type, quality);
+  }
+
+  toBlob(type = "image/png", quality) {
+    this._assertReady();
+    this.draw();
+    if (typeof this.canvas.toBlob !== "function") {
+      return Promise.resolve(dataUrlToBlob(this.canvas.toDataURL(type, quality)));
+    }
+    return new Promise((resolve, reject) => {
+      const onBlob = (blob) => {
+        if (blob) {
+          resolve(blob);
+          return;
+        }
+        try {
+          resolve(dataUrlToBlob(this.canvas.toDataURL(type, quality)));
+        } catch (error) {
+          reject(error instanceof Error ? error : new Error(String(error)));
+        }
+      };
+      if (quality === undefined) {
+        this.canvas.toBlob(onBlob, type);
+      } else {
+        this.canvas.toBlob(onBlob, type, quality);
+      }
+    });
+  }
+
+  async downloadPNG(filename = "nbimplot.png") {
+    const blob = await this.toBlob("image/png");
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = sanitizePngFilename(filename);
+    link.style.display = "none";
+    (document.body || this.wrapper).appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+    return blob;
   }
 
   _emitViewChange() {

@@ -482,6 +482,26 @@ def test_perf_stats_callback_and_frontend_toggle_message():
     assert toggles[-1]["interval_ms"] == 250
 
 
+def test_export_png_sends_frontend_action_message():
+    plot = ip.Plot()
+    sent = _capture_messages(plot)
+
+    plot.export_png("signal.png")
+    content, buffers = sent[-1]
+    assert content == {"type": "export_png", "filename": "signal.png"}
+    assert buffers is None
+
+    plot.export_png("")
+    content, _ = sent[-1]
+    assert content["filename"] == "nbimplot.png"
+
+    sub = ip.Subplots(1, 1)
+    sent = _capture_messages(sub._plot)
+    sub.export_png("subplots.png")
+    content, _ = sent[-1]
+    assert content == {"type": "export_png", "filename": "subplots.png"}
+
+
 def test_subplots_use_native_config_and_subplot_routing():
     sub = ip.Subplots(1, 2, link_all_x=True, no_menus=True)
     root_plot = sub._plot

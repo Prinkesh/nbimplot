@@ -97,6 +97,9 @@ Core methods:
 - `handle.append(y)`
 - `plot.render()`
 - `plot.requestRender()` / `plot.draw()`
+- `plot.toDataURL(type?, quality?)`
+- `plot.toBlob(type?, quality?)`
+- `plot.downloadPNG(filename?)`
 - `plot.autoscale()`
 - `plot.setView(xMin, xMax, yMin, yMax)`
 - `plot.getView()`
@@ -192,6 +195,17 @@ h.setData(yNew, { x: xNew });
 `x` must be finite, equal-length with `y`, and sorted in non-decreasing order
 so the WASM LOD engine can binary-search the visible range. If the line keeps
 the same length, `h.setData(yNew)` preserves the existing x buffer.
+
+## PNG Export
+
+```js
+await plot.downloadPNG("nbimplot-signal.png");
+const dataUrl = plot.toDataURL("image/png");
+const blob = await plot.toBlob("image/png");
+```
+
+The export methods redraw the current strict WASM/ImPlot canvas immediately
+before reading pixels. They do not use a JavaScript renderer fallback.
 
 For `heatmap`, pass a flat `Float32Array` plus shape:
 

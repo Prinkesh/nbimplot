@@ -1,4 +1,4 @@
-import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=aligned-plots-fix";
+import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=png-export";
 
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
@@ -82,6 +82,7 @@ const frameMs = document.querySelector("#frame-ms");
 const updateButton = document.querySelector("#update-data");
 const streamButton = document.querySelector("#toggle-stream");
 const autoscaleButton = document.querySelector("#autoscale");
+const exportButton = document.querySelector("#export-png");
 const colormapSelect = document.querySelector("#colormap-select");
 const interactionReadout = document.querySelector("#interaction-readout");
 
@@ -863,6 +864,21 @@ async function main() {
 
   on(autoscaleButton, "click", () => {
     for (const plot of state.plots) plot.autoscale();
+  });
+
+  on(exportButton, "click", async () => {
+    let selected = Array.from(state.visibleIds)
+      .map((id) => [id, state.plotById.get(id)])
+      .find(([, plot]) => Boolean(plot));
+    if (!selected && state.plots.length > 0) {
+      selected = ["nbimplot-demo", state.plots[0]];
+    }
+    if (!selected) {
+      await loadExample("line-lod-plot");
+      selected = ["line-lod-plot", state.plotById.get("line-lod-plot")];
+    }
+    const [id, plot] = selected;
+    if (plot) await plot.downloadPNG(`${id}.png`);
   });
 
   on(colormapSelect, "change", () => {

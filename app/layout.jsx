@@ -60,7 +60,7 @@ const structuredData = {
       codeRepository: githubUrl,
       downloadUrl: pypiUrl,
       installUrl: pypiUrl,
-      softwareVersion: "0.1.11",
+      softwareVersion: "0.1.12",
       programmingLanguage: ["Python", "JavaScript", "C++", "WebAssembly"],
       runtimePlatform: ["Jupyter", "WebGL2", "WebAssembly"],
       keywords:

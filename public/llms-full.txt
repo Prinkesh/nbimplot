@@ -84,6 +84,12 @@ h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
 ```
 
+Export the current notebook canvas:
+
+```python
+p.export_png("signal.png")
+```
+
 Streaming with implicit sample index:
 
 ```python
@@ -133,6 +139,14 @@ Update existing data:
 ```js
 h.setData(yNew, { x: xNew });
 plot.render();
+```
+
+Export the current web canvas:
+
+```js
+await plot.downloadPNG("signal.png");
+const dataUrl = plot.toDataURL("image/png");
+const blob = await plot.toBlob("image/png");
 ```
 
 Dispose when unmounting:

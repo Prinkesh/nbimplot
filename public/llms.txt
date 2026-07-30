@@ -31,6 +31,7 @@ p.show()
 
 h.set_data((0.8 * y).astype(np.float32), x=x)
 p.render()
+p.export_png("signal.png")
 
 p.on_hover(lambda plot, event: print(event["series_name"], event["index"]))
 p.on_select(lambda plot, event: print(plot.indices_for_selection(event)))
@@ -49,6 +50,7 @@ for (let i = 0; i < y.length; i += 1) {
 }
 const h = plot.line("mid", y, { x });
 plot.render();
+await plot.downloadPNG("signal.png");
 ```
 
 Important constraints:
@@ -56,6 +58,7 @@ Important constraints:
 - Strict WASM/ImPlot runtime, no JavaScript renderer fallback.
 - Line x-data must be finite, equal length with y, and sorted non-decreasing for LOD.
 - Streaming append uses implicit sample indices; custom x streaming should use set_data/setData.
+- PNG export uses the existing WASM/ImPlot canvas: `p.export_png(...)`, `plot.downloadPNG(...)`, `plot.toDataURL(...)`, or `plot.toBlob(...)`.
 
 Key links:
 - Homepage and demo: https://prinkesh.github.io/nbimplot/

@@ -1957,6 +1957,11 @@ class Plot(anywidget.AnyWidget):
         self._ensure_open()
         self.send({"type": "render"})
 
+    def export_png(self, filename: str = "nbimplot.png") -> None:
+        """Download the current frontend canvas as a PNG from the notebook view."""
+        self._ensure_open()
+        self.send({"type": "export_png", "filename": str(filename or "nbimplot.png")})
+
     def show(self) -> None:
         display(self)
         return None
@@ -2608,6 +2613,9 @@ class Subplots:
 
     def render(self) -> None:
         self._plot.render()
+
+    def export_png(self, filename: str = "nbimplot.png") -> None:
+        self._plot.export_png(filename)
 
 
 class AlignedPlots(Subplots):

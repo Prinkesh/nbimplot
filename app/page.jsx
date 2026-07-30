@@ -112,9 +112,9 @@ const examples = [
   {
     id: "advanced-api-plot",
     section: "Advanced API",
-    title: "View, Constraints, Axis Links, Raw Primitives",
-    text: "A focused API coverage example for view/perf callbacks, manual render scheduling, axis constraints/state/linking, aligned groups, time axes, and direct primitive access.",
-    code: 'plot.onViewChange(console.log);\nplot.setAxisLimitsConstraints("y1", -1.4, 1.4);\nplot.setAxisLink("x2", "x1");\nplot.primitive("tag_y", { value: 0.85 });',
+    title: "View, Constraints, Axis Links, Export",
+    text: "A focused API coverage example for view/perf callbacks, PNG export, manual render scheduling, axis constraints/state/linking, aligned groups, time axes, and direct primitive access.",
+    code: 'plot.onViewChange(console.log);\nconst url = plot.toDataURL();\nconst blob = await plot.toBlob();\nawait plot.downloadPNG("advanced.png");\nplot.setAxisLimitsConstraints("y1", -1.4, 1.4);\nplot.setAxisLink("x2", "x1");',
   },
 ];
 
@@ -172,6 +172,7 @@ export default function Page() {
           <button id="update-data" type="button">Update Data</button>
           <button id="toggle-stream" type="button">Start Stream</button>
           <button id="autoscale" type="button">Autoscale All</button>
+          <button id="export-png" type="button">Export PNG</button>
           <label className="select-wrap">
             <span>Colormap</span>
             <select id="colormap-select" defaultValue="Viridis">

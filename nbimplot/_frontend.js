@@ -102,6 +102,47 @@ function toArrayBuffer(value) {
   return null;
 }
 
+function dataUrlToBlob(dataUrl) {
+  const comma = dataUrl.indexOf(",");
+  if (comma < 0) {
+    return new Blob([], { type: "application/octet-stream" });
+  }
+  const header = dataUrl.slice(0, comma);
+  const payload = dataUrl.slice(comma + 1);
+  const mime = /^data:([^;,]+)/.exec(header)?.[1] || "application/octet-stream";
+  const binary = header.includes(";base64") ? atob(payload) : decodeURIComponent(payload);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return new Blob([bytes], { type: mime });
+}
+
+function canvasToBlob(canvas, type = "image/png") {
+  if (typeof canvas.toBlob !== "function") {
+    return Promise.resolve(dataUrlToBlob(canvas.toDataURL(type)));
+  }
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (blob) {
+        resolve(blob);
+        return;
+      }
+      try {
+        resolve(dataUrlToBlob(canvas.toDataURL(type)));
+      } catch (error) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }, type);
+  });
+}
+
+function sanitizePngFilename(filename) {
+  const raw = String(filename || "nbimplot.png").trim() || "nbimplot.png";
+  const safe = raw.replace(/[\\/:*?"<>|]+/g, "_");
+  return /\.png$/i.test(safe) ? safe : `${safe}.png`;
+}
+
 let modulePromise = null;
 let moduleAssetKey = "";
 let lastWasmLoadError = "";
@@ -1835,6 +1876,9 @@ class PlotRuntime {
       case "render":
         this._markDirty();
         break;
+      case "export_png":
+        this._exportPng(content);
+        break;
       case "set_perf_reporting":
         this._handleSetPerfReportingMessage(content);
         break;
@@ -2968,6 +3012,44 @@ class PlotRuntime {
     this._emitInteractionUpdate();
     this._updatePerfStats();
 
+  }
+
+  _exportPng(content) {
+    if (this.disposed) {
+      return;
+    }
+    if (this.wasmReady) {
+      this._flushInputFrame();
+    } else {
+      this.dirty = false;
+      this._draw();
+    }
+
+    const composite = document.createElement("canvas");
+    composite.width = Math.max(1, this.canvas.width);
+    composite.height = Math.max(1, this.canvas.height);
+    const ctx = composite.getContext("2d");
+    if (!ctx) {
+      return;
+    }
+    ctx.drawImage(this.canvas, 0, 0);
+    ctx.drawImage(this.overlay, 0, 0);
+
+    canvasToBlob(composite, "image/png")
+      .then((blob) => {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = sanitizePngFilename(content?.filename);
+        link.style.display = "none";
+        (document.body || this.wrapper).appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 30000);
+      })
+      .catch((error) => {
+        console.warn("Failed to export nbimplot PNG", error);
+      });
   }
 
   _wrapText(ctx, text, maxWidth) {

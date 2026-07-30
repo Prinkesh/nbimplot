@@ -128,6 +128,17 @@ plot.image("rgba", pixels, {
 });
 ```
 
+## PNG Export
+
+```js
+await plot.downloadPNG("nbimplot-signal.png");
+const dataUrl = plot.toDataURL("image/png");
+const blob = await plot.toBlob("image/png");
+```
+
+Export redraws the strict WASM/ImPlot canvas immediately before reading pixels;
+it does not use a JavaScript plotting fallback.
+
 ## Lifecycle
 
 Always dispose plots when removing them from the DOM:

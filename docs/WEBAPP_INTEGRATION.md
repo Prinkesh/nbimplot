@@ -45,6 +45,14 @@ npm install @nbimplot/web
 </script>
 ```
 
+To export the active canvas:
+
+```js
+await plot.downloadPNG("signal.png");
+const blob = await plot.toBlob("image/png");
+const dataUrl = plot.toDataURL("image/png");
+```
+
 ## React Pattern
 
 ```jsx
