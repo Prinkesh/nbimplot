@@ -1,24 +1,28 @@
 @import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,650;9..144,800&family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 
 :root {
-  --night: #090d10;
-  --night-2: #10171b;
-  --night-3: #172127;
-  --ink: #f6f0df;
-  --muted: #9eaaad;
-  --muted-2: #6f7a7f;
-  --line: rgb(236 204 144 / 0.20);
-  --line-strong: rgb(236 204 144 / 0.38);
-  --aqua: #4bd2c0;
-  --aqua-2: #8debdc;
-  --copper: #d97945;
-  --copper-2: #f1b36f;
-  --lime: #c8f26b;
-  --paper: #fff5db;
-  --shadow: 0 26px 90px rgb(0 0 0 / 0.40);
-  --panel: linear-gradient(145deg, rgb(17 25 29 / 0.92), rgb(9 13 16 / 0.96));
-  --radius-xl: 34px;
-  --radius-lg: 26px;
+  --night: #05070b;
+  --night-2: #0b1117;
+  --night-3: #111c23;
+  --ink: #fff4dc;
+  --muted: #aab3b1;
+  --muted-2: #737f80;
+  --line: rgb(255 244 220 / 0.13);
+  --line-strong: rgb(255 244 220 / 0.28);
+  --aqua: #39dfcb;
+  --aqua-2: #8ff5e9;
+  --copper: #f47d45;
+  --copper-2: #ffc174;
+  --lime: #d9ff66;
+  --violet: #97a2ff;
+  --paper: #fff4dc;
+  --glass: rgb(255 244 220 / 0.065);
+  --glass-strong: rgb(255 244 220 / 0.105);
+  --shadow: 0 30px 110px rgb(0 0 0 / 0.52);
+  --shadow-soft: 0 18px 56px rgb(0 0 0 / 0.32);
+  --panel: linear-gradient(145deg, rgb(17 27 33 / 0.92), rgb(5 8 12 / 0.97));
+  --radius-xl: 38px;
+  --radius-lg: 28px;
   --radius-md: 18px;
   background: var(--night);
   color: var(--ink);
@@ -38,22 +42,22 @@ body {
 
 body {
   background:
-    radial-gradient(circle at 10% 4%, rgb(75 210 192 / 0.22), transparent 28rem),
-    radial-gradient(circle at 88% 12%, rgb(217 121 69 / 0.22), transparent 30rem),
-    radial-gradient(circle at 52% 48%, rgb(200 242 107 / 0.09), transparent 34rem),
-    linear-gradient(135deg, #070a0c 0%, #11191d 48%, #070a0c 100%);
+    radial-gradient(circle at 14% 0%, rgb(57 223 203 / 0.28), transparent 30rem),
+    radial-gradient(circle at 88% 10%, rgb(244 125 69 / 0.24), transparent 34rem),
+    radial-gradient(circle at 58% 40%, rgb(217 255 102 / 0.10), transparent 40rem),
+    linear-gradient(145deg, #040609 0%, #0c151b 42%, #040609 100%);
   color: var(--ink);
   overflow-x: hidden;
 }
 
 body::before {
   background-image:
-    linear-gradient(rgb(255 255 255 / 0.045) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(255 255 255 / 0.045) 1px, transparent 1px);
-  background-size: 44px 44px;
+    linear-gradient(rgb(255 255 255 / 0.044) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.044) 1px, transparent 1px);
+  background-size: 52px 52px;
   content: "";
   inset: 0;
-  mask-image: linear-gradient(to bottom, black, transparent 78%);
+  mask-image: linear-gradient(to bottom, black 0 54%, transparent 84%);
   pointer-events: none;
   position: fixed;
   z-index: -2;
@@ -61,8 +65,8 @@ body::before {
 
 body::after {
   background:
-    conic-gradient(from 190deg at 72% 18%, transparent, rgb(75 210 192 / 0.08), transparent 26%),
-    linear-gradient(120deg, transparent 0 56%, rgb(241 179 111 / 0.09) 56% 58%, transparent 58%);
+    linear-gradient(112deg, transparent 0 47%, rgb(57 223 203 / 0.08) 47% 48%, transparent 48% 100%),
+    conic-gradient(from 210deg at 78% 18%, transparent, rgb(255 193 116 / 0.11), transparent 28%);
   content: "";
   filter: blur(0.2px);
   inset: 0;
@@ -86,25 +90,45 @@ select,
   cursor: pointer;
   font: inherit;
   font-size: 13px;
-  font-weight: 700;
+  font-weight: 800;
   letter-spacing: 0.01em;
   padding: 11px 16px;
-  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease, background 160ms ease;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
 }
 
 button,
 select,
 .secondary-link {
-  background: rgb(255 255 255 / 0.06);
+  background: rgb(255 255 255 / 0.055);
 }
 
 button:hover,
 select:hover,
 .primary-link:hover,
-.secondary-link:hover {
-  border-color: rgb(75 210 192 / 0.78);
-  box-shadow: 0 0 0 4px rgb(75 210 192 / 0.12), 0 16px 42px rgb(0 0 0 / 0.24);
+.secondary-link:hover,
+.resource-links a:hover {
+  border-color: rgb(57 223 203 / 0.78);
+  box-shadow: 0 0 0 4px rgb(57 223 203 / 0.12), 0 18px 50px rgb(0 0 0 / 0.30);
   transform: translateY(-1px);
+}
+
+button:focus-visible,
+select:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgb(57 223 203 / 0.45);
+  outline-offset: 3px;
+}
+
+button[data-label]::before {
+  color: var(--aqua-2);
+  content: attr(data-label);
+  display: block;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  margin-bottom: 2px;
+  text-transform: uppercase;
 }
 
 select {
@@ -114,9 +138,9 @@ select {
 
 .demo-shell {
   display: grid;
-  gap: 22px;
+  gap: 24px;
   margin: 0 auto;
-  max-width: 1540px;
+  max-width: 1580px;
   min-height: 100vh;
   padding: 22px;
 }
@@ -124,10 +148,11 @@ select {
 .topbar {
   align-items: center;
   animation: rise-in 520ms ease both;
-  backdrop-filter: blur(18px);
-  background: rgb(9 13 16 / 0.62);
+  backdrop-filter: blur(22px);
+  background: linear-gradient(90deg, rgb(5 8 12 / 0.72), rgb(15 25 31 / 0.62));
   border: 1px solid var(--line);
   border-radius: 999px;
+  box-shadow: 0 18px 60px rgb(0 0 0 / 0.28);
   display: flex;
   justify-content: space-between;
   padding: 10px 12px;
@@ -150,8 +175,11 @@ select {
 
 .brand-glyph {
   align-items: center;
-  background: linear-gradient(135deg, var(--aqua), var(--lime));
+  background:
+    radial-gradient(circle at 30% 20%, #ffffff, transparent 22px),
+    linear-gradient(135deg, var(--aqua), var(--lime));
   border-radius: 50%;
+  box-shadow: 0 0 34px rgb(57 223 203 / 0.34);
   color: #061012;
   display: inline-flex;
   font-family: "IBM Plex Mono", monospace;
@@ -163,14 +191,23 @@ select {
 }
 
 .topbar-links a {
+  border: 1px solid transparent;
+  border-radius: 999px;
   color: var(--muted);
   font-size: 13px;
-  font-weight: 700;
-  padding: 8px 10px;
+  font-weight: 800;
+  padding: 8px 11px;
 }
 
 .topbar-links a:hover {
+  background: rgb(255 244 220 / 0.08);
+  border-color: var(--line);
   color: var(--ink);
+}
+
+.topbar-links .topbar-cta {
+  background: linear-gradient(135deg, var(--aqua), var(--lime));
+  color: #061012;
 }
 
 .hero-panel,
@@ -188,23 +225,24 @@ select {
 .hero-panel {
   animation: rise-in 640ms 80ms ease both;
   background:
-    linear-gradient(120deg, rgb(75 210 192 / 0.18), transparent 34%),
-    linear-gradient(300deg, rgb(217 121 69 / 0.20), transparent 40%),
+    radial-gradient(circle at 0% 0%, rgb(57 223 203 / 0.23), transparent 34rem),
+    radial-gradient(circle at 100% 0%, rgb(244 125 69 / 0.23), transparent 34rem),
+    linear-gradient(130deg, rgb(255 244 220 / 0.10), transparent 34%),
     var(--panel);
   border-radius: var(--radius-xl);
   display: grid;
-  gap: 28px;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.34fr);
-  min-height: 520px;
+  gap: 36px;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.40fr);
+  min-height: 650px;
   overflow: hidden;
-  padding: clamp(28px, 5vw, 66px);
+  padding: clamp(28px, 5vw, 72px);
   position: relative;
 }
 
 .hero-panel::before {
   background:
-    linear-gradient(90deg, transparent, rgb(255 255 255 / 0.20), transparent),
-    linear-gradient(90deg, var(--aqua), var(--copper), var(--lime));
+    linear-gradient(90deg, transparent, rgb(255 255 255 / 0.28), transparent),
+    linear-gradient(90deg, var(--aqua), var(--lime), var(--copper));
   content: "";
   height: 5px;
   inset: 0 0 auto;
@@ -213,27 +251,45 @@ select {
 
 .hero-panel::after {
   background:
-    radial-gradient(circle, rgb(255 255 255 / 0.18) 0 1px, transparent 1.5px),
-    linear-gradient(135deg, rgb(255 255 255 / 0.08), transparent 58%);
-  background-size: 28px 28px, auto;
-  border: 1px solid rgb(255 255 255 / 0.08);
-  border-radius: 999px;
+    linear-gradient(135deg, rgb(255 255 255 / 0.11), transparent 62%),
+    repeating-linear-gradient(135deg, rgb(255 255 255 / 0.12) 0 1px, transparent 1px 12px);
+  border: 1px solid rgb(255 255 255 / 0.10);
+  border-radius: 42px;
   content: "";
-  height: 360px;
-  opacity: 0.55;
+  height: 420px;
+  opacity: 0.48;
   position: absolute;
-  right: -116px;
-  top: -82px;
-  transform: rotate(-18deg);
-  width: 360px;
+  right: -130px;
+  top: -96px;
+  transform: rotate(-14deg);
+  width: 420px;
 }
 
 .hero-copy-block {
-  align-content: end;
+  align-content: center;
   display: grid;
   gap: 18px;
   position: relative;
   z-index: 1;
+}
+
+.hero-badge-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.hero-badge-row span {
+  background: rgb(57 223 203 / 0.105);
+  border: 1px solid rgb(57 223 203 / 0.22);
+  border-radius: 999px;
+  color: var(--aqua-2);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  padding: 8px 10px;
+  text-transform: uppercase;
 }
 
 .eyebrow,
@@ -257,17 +313,25 @@ h2 {
 
 h1 {
   font-family: "Fraunces", Georgia, serif;
-  font-size: clamp(54px, 9vw, 122px);
+  font-size: clamp(58px, 8vw, 128px);
   font-weight: 800;
-  letter-spacing: -0.038em;
-  line-height: 0.88;
-  max-width: 1040px;
+  letter-spacing: -0.045em;
+  line-height: 0.87;
+  max-width: 1060px;
   word-spacing: 0.035em;
+}
+
+h1 span {
+  background: linear-gradient(100deg, var(--aqua-2), var(--lime) 44%, var(--copper-2));
+  background-clip: text;
+  color: transparent;
+  display: inline-block;
+  -webkit-background-clip: text;
 }
 
 h2 {
   font-family: "Fraunces", Georgia, serif;
-  font-size: clamp(28px, 4vw, 52px);
+  font-size: clamp(30px, 4vw, 54px);
   font-weight: 650;
   line-height: 0.96;
 }
@@ -279,12 +343,12 @@ h2 {
 .hero-card-footer {
   color: var(--muted);
   font-size: 15px;
-  line-height: 1.65;
+  line-height: 1.68;
 }
 
 .hero-copy {
   margin: 0;
-  max-width: 760px;
+  max-width: 770px;
 }
 
 .hero-actions {
@@ -292,6 +356,13 @@ h2 {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 6px;
+}
+
+.primary-link,
+.secondary-link {
+  align-items: center;
+  display: inline-flex;
+  min-height: 44px;
 }
 
 .primary-link {
@@ -304,18 +375,66 @@ h2 {
   color: var(--ink);
 }
 
+.hero-proof-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: 12px;
+  max-width: 720px;
+}
+
+.hero-proof-grid div {
+  background: linear-gradient(145deg, rgb(255 244 220 / 0.11), rgb(255 244 220 / 0.035));
+  border: 1px solid rgb(255 244 220 / 0.12);
+  border-radius: 20px;
+  padding: 16px;
+}
+
+.hero-proof-grid strong {
+  display: block;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: clamp(24px, 4vw, 42px);
+  letter-spacing: -0.08em;
+  line-height: 1;
+}
+
+.hero-proof-grid span {
+  color: var(--muted);
+  display: block;
+  font-size: 12px;
+  font-weight: 800;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+
 .hero-card {
-  align-self: end;
-  backdrop-filter: blur(18px);
-  background: rgb(5 10 12 / 0.70);
+  align-self: center;
+  backdrop-filter: blur(20px);
+  background:
+    linear-gradient(145deg, rgb(5 10 12 / 0.82), rgb(14 23 29 / 0.76)),
+    rgb(5 10 12 / 0.72);
   border: 1px solid rgb(255 255 255 / 0.12);
-  border-radius: 28px;
+  border-radius: 32px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), var(--shadow-soft);
   display: grid;
   gap: 18px;
-  min-height: 360px;
+  min-height: 430px;
   padding: 18px;
   position: relative;
   z-index: 1;
+}
+
+.hero-card::before {
+  background: radial-gradient(circle, rgb(57 223 203 / 0.38), transparent 58%);
+  border-radius: 999px;
+  content: "";
+  filter: blur(12px);
+  height: 78px;
+  opacity: 0.54;
+  position: absolute;
+  right: 22px;
+  top: 58px;
+  width: 78px;
 }
 
 .hero-card-header,
@@ -323,15 +442,62 @@ h2 {
   align-items: center;
   display: flex;
   justify-content: space-between;
+  position: relative;
+  z-index: 1;
 }
 
-.hero-card-header strong {
-  background: rgb(75 210 192 / 0.12);
-  border: 1px solid rgb(75 210 192 / 0.24);
+.hero-card-header strong,
+.plot-frame-top strong {
+  background: rgb(57 223 203 / 0.12);
+  border: 1px solid rgb(57 223 203 / 0.24);
   border-radius: 999px;
   color: var(--aqua-2);
-  font-size: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
   padding: 7px 10px;
+}
+
+.terminal-card {
+  background: #030608;
+  border: 1px solid rgb(255 255 255 / 0.10);
+  border-radius: 22px;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.07);
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  position: relative;
+  z-index: 1;
+}
+
+.terminal-dots {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.terminal-dots i {
+  background: var(--muted-2);
+  border-radius: 50%;
+  display: block;
+  height: 8px;
+  width: 8px;
+}
+
+.terminal-dots i:nth-child(1) {
+  background: var(--copper);
+}
+
+.terminal-dots i:nth-child(2) {
+  background: var(--copper-2);
+}
+
+.terminal-dots i:nth-child(3) {
+  background: var(--aqua);
+}
+
+.terminal-card code {
+  color: #d8fff9;
+  display: block;
 }
 
 .pipeline-list {
@@ -341,11 +507,13 @@ h2 {
   list-style: none;
   margin: 0;
   padding: 0;
+  position: relative;
+  z-index: 1;
 }
 
 .pipeline-list li {
   align-items: center;
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.03));
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.025));
   border: 1px solid rgb(255 255 255 / 0.10);
   border-radius: 18px;
   display: flex;
@@ -355,8 +523,8 @@ h2 {
 
 .pipeline-list li::before {
   align-items: center;
-  background: rgb(241 179 111 / 0.16);
-  border: 1px solid rgb(241 179 111 / 0.28);
+  background: rgb(255 193 116 / 0.14);
+  border: 1px solid rgb(255 193 116 / 0.27);
   border-radius: 50%;
   color: var(--copper-2);
   content: counter(pipeline, decimal-leading-zero);
@@ -372,7 +540,9 @@ h2 {
 .control-panel {
   align-items: center;
   animation: rise-in 620ms 150ms ease both;
-  background: rgb(246 240 223 / 0.06);
+  background:
+    linear-gradient(120deg, rgb(57 223 203 / 0.08), transparent 38%),
+    rgb(255 244 220 / 0.055);
   backdrop-filter: blur(18px);
   border-radius: var(--radius-lg);
   display: flex;
@@ -399,6 +569,13 @@ h2 {
   justify-content: flex-end;
 }
 
+.toolbar button,
+.feature-actions button {
+  background: linear-gradient(145deg, rgb(255 244 220 / 0.11), rgb(255 244 220 / 0.045));
+  border-color: rgb(255 244 220 / 0.15);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+
 .select-wrap {
   align-items: center;
   background: rgb(255 255 255 / 0.05);
@@ -419,9 +596,9 @@ h2 {
 .feature-workbench {
   animation: rise-in 620ms 190ms ease both;
   background:
-    radial-gradient(circle at 8% 12%, rgb(200 242 107 / 0.13), transparent 28rem),
-    linear-gradient(135deg, rgb(75 210 192 / 0.13), rgb(217 121 69 / 0.10)),
-    rgb(246 240 223 / 0.045);
+    radial-gradient(circle at 8% 12%, rgb(217 255 102 / 0.14), transparent 28rem),
+    linear-gradient(135deg, rgb(57 223 203 / 0.13), rgb(244 125 69 / 0.10)),
+    rgb(255 244 220 / 0.045);
   backdrop-filter: blur(18px);
   border-radius: var(--radius-lg);
   display: grid;
@@ -438,7 +615,7 @@ h2 {
   content: "";
   height: 3px;
   inset: auto 22px 0;
-  opacity: 0.7;
+  opacity: 0.72;
   position: absolute;
 }
 
@@ -465,19 +642,21 @@ h2 {
 }
 
 .feature-actions button {
-  border-radius: 18px;
-  min-height: 58px;
+  border-radius: 20px;
+  min-height: 68px;
+  padding: 14px;
   text-align: left;
 }
 
 .feature-status {
-  background: rgb(5 10 12 / 0.55);
-  border: 1px dashed rgb(75 210 192 / 0.36);
-  border-radius: 16px;
+  background: rgb(3 6 8 / 0.62);
+  border: 1px dashed rgb(57 223 203 / 0.38);
+  border-radius: 18px;
   color: var(--aqua-2) !important;
   font-family: "IBM Plex Mono", monospace;
   font-size: 12px;
-  padding: 12px 14px;
+  line-height: 1.55;
+  padding: 13px 15px;
 }
 
 .metrics {
@@ -488,10 +667,24 @@ h2 {
 }
 
 .metrics div {
-  background: linear-gradient(145deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.035));
-  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.028)),
+    rgb(5 8 12 / 0.28);
+  border-radius: 22px;
   min-width: 0;
   padding: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.metrics div::after {
+  background: linear-gradient(90deg, var(--aqua), transparent);
+  content: "";
+  height: 2px;
+  inset: 0 auto auto 0;
+  opacity: 0.5;
+  position: absolute;
+  width: 58%;
 }
 
 .metrics span {
@@ -511,9 +704,9 @@ h2 {
 .resource-panel,
 .examples-heading {
   animation: rise-in 620ms 280ms ease both;
-  background: linear-gradient(135deg, rgb(75 210 192 / 0.10), rgb(217 121 69 / 0.08));
+  background: linear-gradient(135deg, rgb(57 223 203 / 0.095), rgb(244 125 69 / 0.075));
   border-radius: var(--radius-lg);
-  padding: 18px 20px;
+  padding: 20px 22px;
 }
 
 .notes-panel strong {
@@ -523,8 +716,8 @@ h2 {
 .examples-heading {
   display: grid;
   gap: 12px;
-  margin-top: 16px;
-  max-width: 940px;
+  margin-top: 18px;
+  max-width: 980px;
 }
 
 .examples-heading p {
@@ -558,23 +751,24 @@ h2 {
 }
 
 .resource-links a {
-  background: rgb(246 240 223 / 0.08);
-  border: 1px solid rgb(246 240 223 / 0.14);
+  background: rgb(255 244 220 / 0.075);
+  border: 1px solid rgb(255 244 220 / 0.14);
   border-radius: 999px;
   color: var(--ink);
   font-size: 12px;
   font-weight: 800;
-  padding: 9px 12px;
+  padding: 10px 13px;
+  transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease, background 180ms ease;
 }
 
 .resource-links a:hover {
-  background: rgb(75 210 192 / 0.16);
-  border-color: rgb(75 210 192 / 0.32);
+  background: rgb(57 223 203 / 0.14);
+  border-color: rgb(57 223 203 / 0.32);
 }
 
 .examples-grid {
   display: grid;
-  gap: 24px;
+  gap: 28px;
 }
 
 .example-card {
@@ -582,24 +776,39 @@ h2 {
   animation-timeline: view();
   animation-range: entry 0% cover 28%;
   background:
-    radial-gradient(circle at 4% 0%, rgb(75 210 192 / 0.10), transparent 26rem),
-    linear-gradient(145deg, rgb(246 240 223 / 0.07), rgb(246 240 223 / 0.025));
+    radial-gradient(circle at 4% 0%, rgb(57 223 203 / 0.12), transparent 26rem),
+    linear-gradient(145deg, rgb(255 244 220 / 0.075), rgb(255 244 220 / 0.025));
   border-radius: var(--radius-xl);
   display: grid;
   gap: 18px;
-  grid-template-columns: minmax(300px, 0.34fr) minmax(0, 1fr);
+  grid-template-columns: minmax(320px, 0.34fr) minmax(0, 1fr);
   overflow: hidden;
   padding: 18px;
   position: relative;
+  transition: border-color 200ms ease, box-shadow 200ms ease, transform 200ms ease;
+}
+
+.example-card:hover {
+  border-color: rgb(57 223 203 / 0.34);
+  box-shadow: 0 34px 120px rgb(0 0 0 / 0.58), 0 0 0 1px rgb(57 223 203 / 0.06);
+  transform: translateY(-2px);
 }
 
 .example-card::before {
-  background: linear-gradient(180deg, var(--aqua), transparent 70%);
+  background: linear-gradient(180deg, var(--aqua), var(--lime), transparent 78%);
   content: "";
   inset: 20px auto 20px 0;
-  opacity: 0.28;
+  opacity: 0.34;
   position: absolute;
   width: 2px;
+}
+
+.example-card:nth-child(3n + 2)::before {
+  background: linear-gradient(180deg, var(--copper-2), var(--aqua), transparent 78%);
+}
+
+.example-card:nth-child(3n + 3)::before {
+  background: linear-gradient(180deg, var(--lime), var(--violet), transparent 78%);
 }
 
 .example-copy {
@@ -619,7 +828,8 @@ h2 {
 
 .example-kicker span {
   align-items: center;
-  border: 1px solid rgb(241 179 111 / 0.28);
+  background: rgb(255 193 116 / 0.10);
+  border: 1px solid rgb(255 193 116 / 0.27);
   border-radius: 999px;
   color: var(--copper-2);
   display: inline-flex;
@@ -636,7 +846,7 @@ h2 {
 }
 
 pre {
-  background: #050809;
+  background: #030608;
   border: 1px solid rgb(255 255 255 / 0.09);
   border-radius: 18px;
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.06);
@@ -654,11 +864,11 @@ code {
 
 .plot-frame {
   background:
-    linear-gradient(#0d1316, #0d1316) padding-box,
-    linear-gradient(135deg, rgb(75 210 192 / 0.62), rgb(217 121 69 / 0.42), rgb(255 255 255 / 0.08)) border-box;
+    linear-gradient(#0a1014, #0a1014) padding-box,
+    linear-gradient(135deg, rgb(57 223 203 / 0.70), rgb(244 125 69 / 0.45), rgb(255 255 255 / 0.08)) border-box;
   border: 1px solid transparent;
-  border-radius: 24px;
-  box-shadow: 0 24px 70px rgb(0 0 0 / 0.45), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  border-radius: 28px;
+  box-shadow: 0 24px 76px rgb(0 0 0 / 0.48), inset 0 1px 0 rgb(255 255 255 / 0.06);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
@@ -666,31 +876,32 @@ code {
   position: relative;
 }
 
-.plot-frame-top {
-  align-items: center;
-  background: linear-gradient(90deg, rgb(255 255 255 / 0.08), rgb(255 255 255 / 0.025));
-  border-bottom: 1px solid rgb(255 255 255 / 0.08);
-  color: rgb(246 240 223 / 0.72);
-  display: flex;
-  font-size: 12px;
-  font-weight: 700;
-  justify-content: space-between;
-  min-height: 42px;
-  padding: 0 13px;
+.plot-frame::before {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.18), transparent);
+  content: "";
+  height: 1px;
+  inset: 0 14px auto;
+  position: absolute;
+  z-index: 1;
 }
 
-.plot-frame-top i {
-  background: linear-gradient(90deg, var(--aqua), var(--copper-2));
-  border-radius: 999px;
-  box-shadow: 0 0 24px rgb(75 210 192 / 0.36);
-  height: 8px;
-  width: 56px;
+.plot-frame-top {
+  align-items: center;
+  background: linear-gradient(90deg, rgb(255 255 255 / 0.09), rgb(255 255 255 / 0.025));
+  border-bottom: 1px solid rgb(255 255 255 / 0.08);
+  color: rgb(255 244 220 / 0.76);
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  justify-content: space-between;
+  min-height: 46px;
+  padding: 0 14px;
 }
 
 .plot-host {
   background:
-    radial-gradient(circle at 50% 0%, rgb(75 210 192 / 0.10), transparent 24rem),
-    #0a0f12;
+    radial-gradient(circle at 50% 0%, rgb(57 223 203 / 0.12), transparent 24rem),
+    #070d11;
   height: min(51vh, 510px);
   min-height: 390px;
   min-width: 0;
@@ -699,7 +910,7 @@ code {
 }
 
 .nbimplot-web {
-  background: #0a0f12;
+  background: #070d11;
   height: 100% !important;
   overflow: hidden;
   width: 100% !important;
@@ -710,8 +921,8 @@ code {
 }
 
 .readout {
-  background: rgb(75 210 192 / 0.08);
-  border: 1px dashed rgb(75 210 192 / 0.34);
+  background: rgb(57 223 203 / 0.08);
+  border: 1px dashed rgb(57 223 203 / 0.34);
   border-radius: 16px;
   color: var(--aqua-2);
   font-family: "IBM Plex Mono", monospace;
@@ -736,11 +947,11 @@ code {
 }
 
 .plot-placeholder {
-  color: rgb(246 240 223 / 0.62);
+  color: rgb(255 244 220 / 0.62);
 }
 
 .plot-placeholder::before {
-  background: linear-gradient(90deg, transparent, rgb(75 210 192 / 0.35), transparent);
+  background: linear-gradient(90deg, transparent, rgb(57 223 203 / 0.38), transparent);
   border-radius: 999px;
   content: "";
   height: 2px;
@@ -796,6 +1007,7 @@ code {
 @media (max-width: 980px) {
   .hero-panel,
   .feature-workbench,
+  .resource-panel,
   .example-card {
     grid-template-columns: 1fr;
   }
@@ -821,6 +1033,10 @@ code {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
+  .resource-links {
+    justify-content: flex-start;
+  }
+
   .plot-host {
     height: 440px;
     min-height: 360px;
@@ -835,14 +1051,19 @@ code {
 
   .topbar {
     align-items: stretch;
-    border-radius: 22px;
+    border-radius: 24px;
     flex-direction: column;
     gap: 8px;
     position: static;
   }
 
   .topbar-links {
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .topbar-links a {
+    text-align: center;
   }
 
   .hero-panel,
@@ -852,20 +1073,16 @@ code {
   .resource-panel,
   .examples-heading,
   .example-card {
-    border-radius: 22px;
+    border-radius: 24px;
     padding: 16px;
   }
 
-  .resource-panel {
-    grid-template-columns: 1fr;
-  }
-
-  .resource-links {
-    justify-content: flex-start;
-  }
-
   h1 {
-    font-size: clamp(46px, 16vw, 72px);
+    font-size: clamp(48px, 15vw, 76px);
+  }
+
+  .hero-proof-grid {
+    grid-template-columns: 1fr;
   }
 
   .hero-actions,

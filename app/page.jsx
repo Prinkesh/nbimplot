@@ -15,6 +15,14 @@ const pipeline = [
   "WebGL2 canvas",
 ];
 
+const heroBadges = ["WASM only", "ImPlot native", "Jupyter + Web"];
+
+const heroProofs = [
+  ["10M", "line points target"],
+  ["O(px)", "LOD interaction cost"],
+  ["0", "JS render fallback"],
+];
+
 const resourceLinks = [
   ["LLM Summary", `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/llms.txt`],
   ["Full LLM Docs", `${process.env.NEXT_PUBLIC_BASE_PATH || ""}/llms-full.txt`],
@@ -130,13 +138,19 @@ export default function Page() {
           <a href="https://pypi.org/project/nbimplot/">PyPI</a>
           <a href="https://www.npmjs.com/package/@nbimplot/web">npm</a>
           <a href="https://github.com/Prinkesh/nbimplot">GitHub</a>
+          <a className="topbar-cta" href="#feature-workbench">Try APIs</a>
         </div>
       </nav>
 
       <section className="hero-panel">
         <div className="hero-copy-block">
+          <div className="hero-badge-row" aria-label="Project qualities">
+            {heroBadges.map((badge) => (
+              <span key={badge}>{badge}</span>
+            ))}
+          </div>
           <p className="eyebrow">ImPlot quality, notebook reach</p>
-          <h1>Fast plotting for serious data in notebooks and web apps.</h1>
+          <h1>Fast plotting for <span>million-point</span> workflows.</h1>
           <p className="hero-copy">
             nbimplot renders inside notebook output cells with the same strict WASM/ImPlot
             core shown here: typed-array uploads, screen-resolution LOD, native pan/zoom,
@@ -146,11 +160,28 @@ export default function Page() {
             <a className="primary-link" href="#examples">Explore Examples</a>
             <a className="secondary-link" href="https://github.com/Prinkesh/nbimplot">View Source</a>
           </div>
+          <div className="hero-proof-grid" aria-label="Performance proof points">
+            {heroProofs.map(([value, label]) => (
+              <div key={label}>
+                <strong>{value}</strong>
+                <span>{label}</span>
+              </div>
+            ))}
+          </div>
         </div>
         <div className="hero-card" aria-label="Rendering pipeline">
           <div className="hero-card-header">
-            <span>Pipeline</span>
+            <span>Runtime Trace</span>
             <strong>No JS renderer</strong>
+          </div>
+          <div className="terminal-card" aria-label="Install commands">
+            <div className="terminal-dots" aria-hidden="true">
+              <i />
+              <i />
+              <i />
+            </div>
+            <code>pip install nbimplot</code>
+            <code>npm install @nbimplot/web</code>
           </div>
           <ol className="pipeline-list">
             {pipeline.map((step) => (
@@ -169,10 +200,10 @@ export default function Page() {
           <strong>Drive the loaded WASM plots</strong>
         </div>
         <div className="toolbar">
-          <button id="update-data" type="button">Update Data</button>
-          <button id="toggle-stream" type="button">Start Stream</button>
-          <button id="autoscale" type="button">Autoscale All</button>
-          <button id="export-png" type="button">Export PNG</button>
+          <button id="update-data" type="button" data-label="data">Update Data</button>
+          <button id="toggle-stream" type="button" data-label="stream">Start Stream</button>
+          <button id="autoscale" type="button" data-label="view">Autoscale All</button>
+          <button id="export-png" type="button" data-label="export">Export PNG</button>
           <label className="select-wrap">
             <span>Colormap</span>
             <select id="colormap-select" defaultValue="Viridis">
@@ -190,7 +221,7 @@ export default function Page() {
         </div>
       </section>
 
-      <section className="feature-workbench" aria-label="Visible feature workbench">
+      <section id="feature-workbench" className="feature-workbench" aria-label="Visible feature workbench">
         <div className="feature-workbench-copy">
           <p className="eyebrow">Feature Workbench</p>
           <h2>Exercise the release APIs directly.</h2>
@@ -204,14 +235,14 @@ export default function Page() {
           </p>
         </div>
         <div className="feature-actions">
-          <button id="stream-pause" type="button">Pause Stream</button>
-          <button id="stream-clear" type="button">Clear Stream</button>
-          <button id="stream-window" type="button">Set 3k Window</button>
-          <button id="run-selection-demo" type="button">Highlight Selection</button>
-          <button id="export-state" type="button">Download State JSON</button>
-          <button id="restore-state" type="button">Restore State</button>
-          <button id="copy-png" type="button">Copy PNG</button>
-          <button id="toggle-crosshair" type="button">Disable Crosshair Link</button>
+          <button id="stream-pause" type="button" data-label="stream">Pause Stream</button>
+          <button id="stream-clear" type="button" data-label="buffer">Clear Stream</button>
+          <button id="stream-window" type="button" data-label="window">Set 3k Window</button>
+          <button id="run-selection-demo" type="button" data-label="select">Highlight Selection</button>
+          <button id="export-state" type="button" data-label="state">Download State JSON</button>
+          <button id="restore-state" type="button" data-label="state">Restore State</button>
+          <button id="copy-png" type="button" data-label="image">Copy PNG</button>
+          <button id="toggle-crosshair" type="button" data-label="link">Disable Crosshair Link</button>
         </div>
       </section>
 
@@ -286,7 +317,7 @@ export default function Page() {
             <div className="plot-frame">
               <div className="plot-frame-top">
                 <span>{example.title}</span>
-                <i aria-hidden="true" />
+                <strong>WASM</strong>
               </div>
               <div id={example.id} className="plot-host" />
             </div>
