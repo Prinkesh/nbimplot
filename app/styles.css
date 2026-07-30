@@ -764,13 +764,54 @@ h3 {
   font-size: clamp(26px, 3vw, 42px);
 }
 
-.example-copy pre {
+.code-duo {
+  display: grid;
+  gap: 10px;
+}
+
+.code-pane {
   background: var(--ink);
   border: 1px solid rgb(255 255 255 / 0.08);
   border-radius: 16px;
+  box-shadow: 0 16px 50px rgb(17 20 16 / 0.10);
   color: #f7efe1;
   overflow: hidden;
-  padding: 14px;
+}
+
+.code-pane-web {
+  background: #13201d;
+}
+
+.code-pane-top {
+  align-items: center;
+  border-bottom: 1px solid rgb(255 255 255 / 0.10);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+
+.code-pane-top span {
+  color: #81d8ca;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.code-pane-top strong {
+  color: rgb(244 239 229 / 0.64);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 10px;
+}
+
+.code-pane pre {
+  background: transparent;
+  border: 0;
+  color: #f7efe1;
+  overflow: hidden;
+  padding: 12px;
 }
 
 .example-copy code {

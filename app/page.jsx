@@ -70,6 +70,7 @@ const examples = [
     section: "Performance",
     title: "Million Point Line + Custom X + LOD",
     text: "Explicit x/y buffers, WASM min/max LOD, and callback-driven hover/click/selection inspection.",
+    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Line + LOD")\nh = p.line("signal", y, x=x)\np.on_hover(lambda plot, e: print(e["index"], e["x"], e["y"]))\np.on_select(lambda plot, e: plot.indices_for_selection(e, h))\np',
     code: 'const h = plot.line("signal", y, { x });\nplot.onHover(console.log);\nplot.onSelection((e) => plot.indicesForSelection(e, h));',
   },
   {
@@ -77,6 +78,7 @@ const examples = [
     section: "Performance",
     title: "Realtime Streaming Ring Buffer",
     text: "Append explicit x/y chunks into a fixed-capacity line without recreating the plot object.",
+    pythonCode: 'p = ip.Plot(width=1000, height=360, title="Realtime")\nh = p.stream_line("ticks", capacity=12000, initial=y0, initial_x=x0, auto_render=True)\nh.append(chunk, x=chunk_x)\nh.pause(); h.resume()\np',
     code: 'const h = plot.streamLine("ticks", { capacity: 12000, x: initialX });\nh.append(chunk, { x: chunkX });\nh.pause(); h.resume();',
   },
   {
@@ -84,6 +86,7 @@ const examples = [
     section: "Points",
     title: "Scatter + Bubble Encodings",
     text: "Point-cloud rendering with explicit x/y data and bubble-size encodings for dense browser workflows.",
+    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Scatter + Bubbles")\np.scatter("samples", y, x=x, size=2.5)\np.bubbles("volume", y, sizes, x=x)\np',
     code: 'plot.scatter("samples", y, { x });\nplot.bubbles("volume", y, sizes, { x });',
   },
   {
@@ -91,6 +94,7 @@ const examples = [
     section: "Curves",
     title: "Stairs, Stems, Digital, Shaded, Error Bars",
     text: "Signal-analysis overlays in one canvas: stepped series, impulses, bands, digital states, and uncertainty.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Signal Overlays")\np.stairs("step", y, x=x)\np.stems("stem", impulses, x=x)\np.digital("state", states, x=x)\np.shaded("band", lower, upper, x=x)\np.error_bars("fit", fit, err=err, x=x)\np',
     code: 'plot.stairs("step", y, { x });\nplot.shaded("band", lower, upper, { x });\nplot.errorBars("fit", y, { x, err });',
   },
   {
@@ -98,6 +102,7 @@ const examples = [
     section: "Categorical",
     title: "Bars, Grouped Bars, Horizontal Bars",
     text: "Vertical bars, grouped categories, and horizontal rankings across ImPlot subplots.",
+    pythonCode: 'sp = ip.Subplots(1, 3, width=1100, height=360, title="Bars")\nsp.subplot(0, 0).bars("sales", values)\nsp.subplot(0, 1).bar_groups(["A", "B", "C"], matrix)\nsp.subplot(0, 2).bars_h("rank", values)\nsp',
     code: 'plot.setSubplots(1, 3);\nplot.bars("sales", values);\nplot.barGroups(labels, matrix);\nplot.barsH("rank", values);',
   },
   {
@@ -105,6 +110,7 @@ const examples = [
     section: "Statistics",
     title: "Histogram + 2D Histogram",
     text: "1D and 2D distributions with colorbar-backed density inspection.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Distributions")\np.histogram("returns", values, bins=80)\np.histogram2d("density", x, y, x_bins=80, y_bins=60, show_colorbar=True)\np',
     code: 'plot.histogram("returns", values, { bins: 80 });\nplot.histogram2d("density", x, y, { xBins: 80, yBins: 60 });',
   },
   {
@@ -112,6 +118,7 @@ const examples = [
     section: "Matrices",
     title: "Heatmap + Image",
     text: "Matrix and image plotting with empty heatmap labels, colorbar formatting, and float RGB buffers.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Heatmap + Image")\np.set_colormap("Viridis")\np.heatmap("z", matrix, label_fmt="", show_colorbar=True, colorbar_format="%.2f")\np.image("rgb", image, bounds=((0, 0), (cols, rows)))\np',
     code: 'plot.setColormap("Viridis");\nplot.heatmap("z", matrix, { rows, cols, labelFmt: "" });\nplot.image("rgb", image, { rows, cols, channels: 3 });',
   },
   {
@@ -119,6 +126,7 @@ const examples = [
     section: "Overlays",
     title: "Annotations, Tags, Text, Infinite Lines, Pie",
     text: "Thresholds, callouts, labels, tags, and pie-chart composition using ImPlot primitives.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Overlays")\np.vlines("events", xs)\np.hlines("limits", ys)\np.tag_y(0.0, label_fmt="zero")\np.annotation("peak", x0, y0)\np.pie_chart("mix", values, labels=labels, x=8, y=0, radius=1)\np',
     code: 'plot.vlines("events", xs);\nplot.tagY(0, { labelFmt: "zero" });\nplot.annotation("peak", x, y);\nplot.pieChart("mix", values, { labels });',
   },
   {
@@ -126,6 +134,7 @@ const examples = [
     section: "Axes",
     title: "Axis Labels, Formats, Ticks, Log Scale, Secondary Axis",
     text: "Secondary axes, custom ticks, numeric formats, linked axes, and log/time scale controls.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Axes")\np.set_secondary_axes(y2=True)\np.set_axis_scale(x="linear", y="log")\np.set_axis_label("x1", "time")\np.set_axis_format("y1", "%.2e")\np.set_axis_ticks("x1", ticks, labels=labels)\np.line("primary", y, x=x)\np.line("secondary", y2, x=x, y_axis="y2")\np',
     code: 'plot.setSecondaryAxes({ y2: true });\nplot.setAxisScale({ x: "linear", y: "log" });\nplot.setAxisTicks("x1", ticks, { labels });',
   },
   {
@@ -133,6 +142,7 @@ const examples = [
     section: "Layout",
     title: "Linked Subplots + Crosshair",
     text: "A 2x2 ImPlot subplot grid with linked x-axis behavior and crosshair synchronization.",
+    pythonCode: 'sp = ip.Subplots(2, 2, link_all_x=True, width=1100, height=650, title="Linked")\nsp.set_linked_crosshair("desk", axis="x")\nsp.subplot(0, 0).line("sin", y0, x=x)\nsp.subplot(0, 1).line("cos", y1, x=x)\nsp.subplot(1, 0).scatter("noise", y2, x=x)\nsp',
     code: 'plot.setSubplots(2, 2, { linkAllX: true });\nplot.setLinkedCrosshair("desk", { axis: "x" });\nplot.line("a", y, { x, subplotIndex: 0 });',
   },
   {
@@ -140,6 +150,7 @@ const examples = [
     section: "Interaction",
     title: "Drag Lines, Drag Point, Drag Rect, Drag/Drop Targets",
     text: "Interactive ImPlot primitives for draggable guides, anchors, rectangles, and drop targets.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Drag Tools")\np.drag_line_x("cursor", 40)\np.drag_line_y("threshold", 0.5)\np.drag_point("anchor", 25, 0.5)\np.drag_rect("roi", 10, -1, 20, 1)\np.on_tool_change(lambda plot, event: print(event))\np',
     code: 'plot.dragLineX("cursor", 40);\nplot.dragPoint("anchor", 25, 0.5);\nplot.onInteraction(events => ...);',
   },
   {
@@ -147,6 +158,7 @@ const examples = [
     section: "Colormaps",
     title: "Colormap Widgets + Runtime Switching",
     text: "Selector, slider, and color button widgets that update heatmaps and colorbar primitives at runtime.",
+    pythonCode: 'p = ip.Plot(width=1000, height=420, title="Colormaps")\np.set_colormap("Plasma")\np.heatmap("z", matrix, label_fmt="", show_colorbar=True)\np.colormap_selector(label="Choose map")\np.colormap_slider(label="Sample")\np.colormap_button(label="Active")\np',
     code: 'plot.setColormap("Plasma");\nplot.colormapSelector({ label: "Choose map" });\nplot.colormapSlider({ label: "Sample" });',
   },
   {
@@ -154,6 +166,7 @@ const examples = [
     section: "Advanced API",
     title: "State, Selection, Export",
     text: "View callbacks, state snapshots, PNG export, selection CSV, highlighting, constraints, links, and direct primitive access.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Advanced")\np.set_theme("nbimplot")\nh = p.line("signal", y, x=x)\nstate = p.get_state(include_data=True)\np.highlight_selection(selection, h)\ncsv = p.export_csv_selection(selection, h)\np.export_png("advanced.png")\np',
     code: 'plot.setTheme("nbimplot");\nconst state = plot.getState({ includeData: true });\nplot.highlightSelection(selection, h);\nconst csv = plot.exportCSVSelection(selection, h);\nawait plot.downloadPNG("advanced.png");',
   },
 ];
@@ -170,6 +183,7 @@ export default function Page() {
         </a>
         <div className="topbar-links">
           <a href="#why">Architecture</a>
+          <a href="#developer-api">Python API</a>
           <a href="#command-center">Demo Controls</a>
           <a href="#examples">Examples</a>
           <a href="https://pypi.org/project/nbimplot/">PyPI</a>
@@ -374,6 +388,7 @@ export default function Page() {
           <p>
             Each canvas is an independent WASM session. Scroll to lazy-load examples and
             verify lifecycle cleanup, interactions, subplots, colormaps, and exports.
+            Every card shows the equivalent Python notebook API and direct web API.
           </p>
         </div>
         <div className="example-tabs" aria-label="Example categories">
@@ -393,7 +408,22 @@ export default function Page() {
               </div>
               <h2>{example.title}</h2>
               <p>{example.text}</p>
-              <pre><code>{example.code}</code></pre>
+              <div className="code-duo" aria-label={`${example.title} Python and web examples`}>
+                <section className="code-pane">
+                  <div className="code-pane-top">
+                    <span>Python notebook</span>
+                    <strong>nbimplot</strong>
+                  </div>
+                  <pre><code>{example.pythonCode}</code></pre>
+                </section>
+                <section className="code-pane code-pane-web">
+                  <div className="code-pane-top">
+                    <span>Web app</span>
+                    <strong>@nbimplot/web</strong>
+                  </div>
+                  <pre><code>{example.code}</code></pre>
+                </section>
+              </div>
             </div>
             <div className="plot-frame">
               <div className="plot-frame-top">
