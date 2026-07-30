@@ -190,6 +190,31 @@ export default function Page() {
         </div>
       </section>
 
+      <section className="feature-workbench" aria-label="Visible feature workbench">
+        <div className="feature-workbench-copy">
+          <p className="eyebrow">Feature Workbench</p>
+          <h2>Exercise the release APIs directly.</h2>
+          <p>
+            These buttons load the target WASM canvas, scroll it into view, and run the
+            new visible features: streaming controls, exact selection highlighting,
+            state snapshots, linked crosshairs, and clipboard PNG export.
+          </p>
+          <p id="feature-status" className="feature-status">
+            Pick an action. The app will load the matching example and report the result here.
+          </p>
+        </div>
+        <div className="feature-actions">
+          <button id="stream-pause" type="button">Pause Stream</button>
+          <button id="stream-clear" type="button">Clear Stream</button>
+          <button id="stream-window" type="button">Set 3k Window</button>
+          <button id="run-selection-demo" type="button">Highlight Selection</button>
+          <button id="export-state" type="button">Download State JSON</button>
+          <button id="restore-state" type="button">Restore State</button>
+          <button id="copy-png" type="button">Copy PNG</button>
+          <button id="toggle-crosshair" type="button">Disable Crosshair Link</button>
+        </div>
+      </section>
+
       <section className="metrics" aria-live="polite">
         {stats.map(([label, value]) => (
           <div key={label}>

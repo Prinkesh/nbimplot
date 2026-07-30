@@ -1,9 +1,9 @@
-import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=feature-dashboard";
+import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=feature-workbench";
 
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
 
-const MAX_ACTIVE_PLOTS = 3;
+const MAX_ACTIVE_PLOTS = 4;
 
 const state = {
   plots: [],
@@ -16,6 +16,7 @@ const state = {
   visitedIds: new Set(),
   visibleIds: new Set(),
   loadingIds: new Set(),
+  forceLoadIds: new Set(),
   builders: new Map(),
   colormapPlots: [],
   lineSeries: null,
@@ -26,6 +27,9 @@ const state = {
   streamPlot: null,
   streamSample: 0,
   streaming: false,
+  streamPaused: false,
+  savedPlotState: null,
+  crosshairEnabled: true,
   lastSelectionHash: "",
   observer: null,
   totalExamples: 0,
@@ -56,6 +60,7 @@ const state = {
     this.visitedIds.clear();
     this.visibleIds.clear();
     this.loadingIds.clear();
+    this.forceLoadIds.clear();
     this.builders.clear();
     this.colormapPlots = [];
   },
@@ -85,10 +90,24 @@ const streamButton = document.querySelector("#toggle-stream");
 const autoscaleButton = document.querySelector("#autoscale");
 const exportButton = document.querySelector("#export-png");
 const colormapSelect = document.querySelector("#colormap-select");
+const pauseStreamButton = document.querySelector("#stream-pause");
+const clearStreamButton = document.querySelector("#stream-clear");
+const streamWindowButton = document.querySelector("#stream-window");
+const selectionDemoButton = document.querySelector("#run-selection-demo");
+const exportStateButton = document.querySelector("#export-state");
+const restoreStateButton = document.querySelector("#restore-state");
+const copyPngButton = document.querySelector("#copy-png");
+const crosshairButton = document.querySelector("#toggle-crosshair");
+const featureStatus = document.querySelector("#feature-status");
 const interactionReadout = document.querySelector("#interaction-readout");
 
 function setMode(text) {
   if (mode) mode.textContent = text;
+}
+
+function setFeatureStatus(text) {
+  if (featureStatus) featureStatus.textContent = text;
+  if (interactionReadout) interactionReadout.textContent = text;
 }
 
 function setHostStatus(id, text) {
@@ -218,6 +237,30 @@ function on(element, type, listener) {
   state.controllers.push(controller);
 }
 
+function clearStreamTimers() {
+  for (const timer of state.timers) window.clearInterval(timer);
+  state.timers = [];
+  state.streaming = false;
+  if (streamButton) streamButton.textContent = "Start Stream";
+}
+
+function startStreamTimers() {
+  if (state.streaming) return;
+  state.streaming = true;
+  if (streamButton) streamButton.textContent = "Stop Stream";
+  const timer = window.setInterval(appendStreamChunk, 220);
+  state.timers.push(timer);
+}
+
+function currentLoadedPlot() {
+  const selected = Array.from(state.visibleIds)
+    .map((id) => [id, state.plotById.get(id)])
+    .find(([, plot]) => Boolean(plot));
+  if (selected) return selected;
+  if (state.plots.length > 0) return ["nbimplot-demo", state.plots[0]];
+  return null;
+}
+
 function updateLoadMode() {
   const active = state.plotById.size;
   const visited = state.visitedIds.size;
@@ -235,12 +278,9 @@ function resetHandlesForReleasedPlot(id) {
     state.lineData = null;
   }
   if (id === "streaming-plot") {
-    if (state.streaming) {
-      for (const timer of state.timers) window.clearInterval(timer);
-      state.timers = [];
-      state.streaming = false;
-      if (streamButton) streamButton.textContent = "Start Stream";
-    }
+    clearStreamTimers();
+    state.streamPaused = false;
+    if (pauseStreamButton) pauseStreamButton.textContent = "Pause Stream";
     state.streamHandle = null;
     state.streamPlot = null;
   }
@@ -282,7 +322,8 @@ function enforceActiveBudget() {
   }
 }
 
-function loadExample(id) {
+function loadExample(id, options = {}) {
+  const force = Boolean(options.force);
   if (state.plotById.has(id)) return Promise.resolve(true);
   if (state.loadPromises.has(id)) return state.loadPromises.get(id);
   const builder = state.builders.get(id);
@@ -299,14 +340,19 @@ function loadExample(id) {
   }
 
   const promise = state.lazyChain
-    .then(() => (state.disposed || !state.visibleIds.has(id) ? null : runExample(id, builder)))
+    .then(() => {
+      const forced = force || state.forceLoadIds.has(id);
+      return state.disposed || (!forced && !state.visibleIds.has(id)) ? null : runExample(id, builder);
+    })
     .then((plot) => {
+      const forced = force || state.forceLoadIds.has(id);
+      state.forceLoadIds.delete(id);
       state.loadingIds.delete(id);
       state.loadPromises.delete(id);
       if (plot) {
         state.loadedIds.add(id);
         state.visitedIds.add(id);
-        if (state.visibleIds.has(id)) {
+        if (state.visibleIds.has(id) || forced) {
           enforceActiveBudget();
         } else {
           releaseExample(id);
@@ -318,6 +364,7 @@ function loadExample(id) {
       return Boolean(plot);
     })
     .catch((error) => {
+      state.forceLoadIds.delete(id);
       state.loadingIds.delete(id);
       state.loadPromises.delete(id);
       console.error(`nbimplot lazy load failed: ${id}`, error);
@@ -329,6 +376,46 @@ function loadExample(id) {
   state.loadPromises.set(id, promise);
   state.lazyChain = promise.catch(() => false);
   return promise;
+}
+
+async function focusExample(id) {
+  const host = document.querySelector(`#${id}`);
+  if (host) {
+    host.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+  if (state.plotById.has(id)) {
+    state.forceLoadIds.delete(id);
+    return state.plotById.get(id);
+  }
+  state.forceLoadIds.add(id);
+  const loaded = await loadExample(id, { force: true });
+  if (!loaded) {
+    throw new Error(`Unable to load ${id}.`);
+  }
+  return state.plotById.get(id) || null;
+}
+
+function action(handler) {
+  return async (event) => {
+    try {
+      await handler(event);
+    } catch (error) {
+      console.error("nbimplot demo action failed", error);
+      setFeatureStatus(error instanceof Error ? error.message : String(error));
+    }
+  };
+}
+
+function restorablePlotState(plot) {
+  const snapshot = plot.getState({ includeData: false });
+  return {
+    theme: snapshot.theme,
+    colormap: snapshot.colormap,
+    view: snapshot.view,
+    linkedCrosshair: snapshot.linkedCrosshair,
+    axisLabels: snapshot.axisLabels,
+    axisFormats: snapshot.axisFormats,
+  };
 }
 
 function setupLazyLoading() {
@@ -383,15 +470,12 @@ async function buildLineLod() {
   plot.vlines("spike markers", new Float32Array([131.071, 262.142, 524.284, 786.426]));
   plot.tagY(0, { labelFmt: "zero", roundValue: false });
   plot.onHover((event) => {
-    if (!interactionReadout) return;
-    interactionReadout.textContent = `Hover: ${event.seriesName} index=${event.index.toLocaleString()} x=${event.x.toFixed(3)} y=${event.y.toFixed(3)}`;
+    setFeatureStatus(`Hover: ${event.seriesName} index=${event.index.toLocaleString()} x=${event.x.toFixed(3)} y=${event.y.toFixed(3)}`);
   });
   plot.onClick((event) => {
-    if (!interactionReadout) return;
-    interactionReadout.textContent = `Click: button=${event.button} x=${event.x.toFixed(3)} y=${event.y.toFixed(3)}`;
+    setFeatureStatus(`Click: button=${event.button} x=${event.x.toFixed(3)} y=${event.y.toFixed(3)}`);
   });
   plot.onSelection((event) => {
-    if (!interactionReadout) return;
     const exact = plot.indicesForSelection(event, handle);
     const selectionHash = `${event.xMin}:${event.xMax}:${event.yMin}:${event.yMax}`;
     if (selectionHash !== state.lastSelectionHash) {
@@ -399,7 +483,7 @@ async function buildLineLod() {
       plot.highlightSelection(event, handle, { name: "selected", size: 5 });
     }
     const csv = plot.exportCSVSelection(event, handle);
-    interactionReadout.textContent = `Selection: x=[${event.xMin.toFixed(3)}, ${event.xMax.toFixed(3)}], exact signal points=${exact.length.toLocaleString()}, CSV bytes=${csv.length.toLocaleString()}`;
+    setFeatureStatus(`Selection: x=[${event.xMin.toFixed(3)}, ${event.xMax.toFixed(3)}], exact signal points=${exact.length.toLocaleString()}, CSV bytes=${csv.length.toLocaleString()}`);
   });
   plot.onPerfStats((stats) => {
     if (!frameMs) return;
@@ -435,6 +519,8 @@ async function buildStreaming() {
   });
   state.streamHandle.setStreamOptions({ autoRender: true });
   state.streamPlot = plot;
+  state.streamPaused = false;
+  if (pauseStreamButton) pauseStreamButton.textContent = "Pause Stream";
   return plot;
 }
 
@@ -694,10 +780,9 @@ async function buildDrag() {
   plot.dragDropAxis("x1", { source: true, target: true });
   plot.dragDropLegend({ target: true });
   plot.onInteraction((events) => {
-    if (!interactionReadout) return;
     const active = events.find((event) => event.active) || events[events.length - 1];
     if (!active) return;
-    interactionReadout.textContent = `Interaction events: kind=${active.kind}, id=${active.id}, active=${active.active}, values=(${active.v0.toFixed(2)}, ${active.v1.toFixed(2)}, ${active.v2.toFixed(2)}, ${active.v3.toFixed(2)})`;
+    setFeatureStatus(`Interaction events: kind=${active.kind}, id=${active.id}, active=${active.active}, values=(${active.v0.toFixed(2)}, ${active.v1.toFixed(2)}, ${active.v2.toFixed(2)}, ${active.v3.toFixed(2)})`);
   });
   return plot;
 }
@@ -803,15 +888,13 @@ async function buildAdvancedApi() {
   plot.setView(0, 4 * 3600, -1.25, 1.25);
 
   plot.onViewChange((view) => {
-    if (!interactionReadout) return;
-    interactionReadout.textContent = `View: x=[${view.xMin.toFixed(0)}, ${view.xMax.toFixed(0)}], y=[${view.yMin.toFixed(2)}, ${view.yMax.toFixed(2)}]`;
+    setFeatureStatus(`View: x=[${view.xMin.toFixed(0)}, ${view.xMax.toFixed(0)}], y=[${view.yMin.toFixed(2)}, ${view.yMax.toFixed(2)}]`);
   });
   plot.onSelection((event) => {
-    if (!interactionReadout) return;
     const exact = plot.selectionIndices(event, handle);
     plot.highlightSelection(event, handle, { name: "advanced selection", size: 5 });
     const csv = plot.exportCSVSelection(event, handle);
-    interactionReadout.textContent = `Advanced selection: ${exact.length.toLocaleString()} primary samples, CSV bytes=${csv.length.toLocaleString()}`;
+    setFeatureStatus(`Advanced selection: ${exact.length.toLocaleString()} primary samples, CSV bytes=${csv.length.toLocaleString()}`);
   });
   plot.onPerfStats((stats) => {
     if (!frameMs) return;
@@ -828,8 +911,8 @@ async function buildAdvancedApi() {
     colormap: stateSnapshot.colormap,
     linkedCrosshair: stateSnapshot.linkedCrosshair,
   });
-  if (interactionReadout && view && perf) {
-    interactionReadout.textContent = `Initial advanced view ready; draw=${Math.round(perf.drawPoints).toLocaleString()} points, state JSON=${jsonSnapshot.length.toLocaleString()} bytes`;
+  if (view && perf) {
+    setFeatureStatus(`Initial advanced view ready; draw=${Math.round(perf.drawPoints).toLocaleString()} points, state JSON=${jsonSnapshot.length.toLocaleString()} bytes`);
   }
   plot.requestRender();
   plot.draw();
@@ -867,51 +950,161 @@ async function main() {
   updateLoadMode();
   setupLazyLoading();
 
-  on(updateButton, "click", async () => {
-    await loadExample("line-lod-plot");
+  on(updateButton, "click", action(async () => {
+    await focusExample("line-lod-plot");
     if (!state.lineSeries || !state.lineData) return;
     state.linePhase += 0.55;
     makeSignal(state.lineData, state.linePhase);
     state.lineSeries.setData(state.lineData, { x: state.lineX });
-  });
+    setFeatureStatus(`Updated 1,000,000 y values in place at phase=${state.linePhase.toFixed(2)}.`);
+  }));
 
-  on(streamButton, "click", async () => {
-    await loadExample("streaming-plot");
+  on(streamButton, "click", action(async () => {
+    await focusExample("streaming-plot");
     if (!state.streamHandle) return;
+    if (state.streamPaused) {
+      state.streamHandle.resume();
+      state.streamPaused = false;
+      if (pauseStreamButton) pauseStreamButton.textContent = "Pause Stream";
+    }
     state.streaming = !state.streaming;
     streamButton.textContent = state.streaming ? "Stop Stream" : "Start Stream";
     if (!state.streaming) {
-      for (const timer of state.timers) window.clearInterval(timer);
-      state.timers = [];
+      clearStreamTimers();
+      setFeatureStatus("Streaming timer stopped. Existing ring-buffer data stays in the plot.");
       return;
     }
     const timer = window.setInterval(appendStreamChunk, 220);
     state.timers.push(timer);
-  });
+    setFeatureStatus("Streaming started: appending explicit x/y chunks into the WASM-backed ring buffer.");
+  }));
 
   on(autoscaleButton, "click", () => {
     for (const plot of state.plots) plot.autoscale();
+    setFeatureStatus(`Autoscaled ${state.plots.length} active WASM plot(s).`);
   });
 
-  on(exportButton, "click", async () => {
-    let selected = Array.from(state.visibleIds)
-      .map((id) => [id, state.plotById.get(id)])
-      .find(([, plot]) => Boolean(plot));
-    if (!selected && state.plots.length > 0) {
-      selected = ["nbimplot-demo", state.plots[0]];
-    }
+  on(exportButton, "click", action(async () => {
+    let selected = currentLoadedPlot();
     if (!selected) {
-      await loadExample("line-lod-plot");
+      await focusExample("line-lod-plot");
       selected = ["line-lod-plot", state.plotById.get("line-lod-plot")];
     }
     const [id, plot] = selected;
-    if (plot) await plot.downloadPNG(`${id}.png`);
-  });
+    if (plot) {
+      const blob = await plot.downloadPNG(`${id}.png`);
+      setFeatureStatus(`Downloaded ${id}.png (${blob.size.toLocaleString()} bytes).`);
+    }
+  }));
 
   on(colormapSelect, "change", () => {
     state.activeColormap = colormapSelect.value;
     for (const plot of state.colormapPlots) plot.setColormap(state.activeColormap);
+    setFeatureStatus(`Applied ${state.activeColormap} to ${state.colormapPlots.length} colormap-aware plot(s).`);
   });
+
+  on(pauseStreamButton, "click", action(async () => {
+    await focusExample("streaming-plot");
+    if (!state.streamHandle) return;
+    state.streamPaused = !state.streamPaused;
+    if (state.streamPaused) {
+      state.streamHandle.pause();
+      clearStreamTimers();
+      pauseStreamButton.textContent = "Resume Stream";
+      setFeatureStatus("Stream paused. Appends are ignored until resume, and the timer has been stopped.");
+      return;
+    }
+    state.streamHandle.resume();
+    pauseStreamButton.textContent = "Pause Stream";
+    startStreamTimers();
+    setFeatureStatus("Stream resumed and timer restarted.");
+  }));
+
+  on(clearStreamButton, "click", action(async () => {
+    await focusExample("streaming-plot");
+    if (!state.streamHandle) return;
+    clearStreamTimers();
+    state.streamHandle.resume();
+    state.streamPaused = false;
+    state.streamSample = 1;
+    state.streamHandle.clear({ x0: 0, y0: 0 });
+    if (pauseStreamButton) pauseStreamButton.textContent = "Pause Stream";
+    setFeatureStatus("Stream ring buffer cleared to one seed point without recreating the plot.");
+  }));
+
+  on(streamWindowButton, "click", action(async () => {
+    await focusExample("streaming-plot");
+    if (!state.streamHandle) return;
+    state.streamHandle.setWindow(3000);
+    setFeatureStatus("Stream window set to 3,000 points. Future appends keep only the latest samples.");
+  }));
+
+  on(selectionDemoButton, "click", action(async () => {
+    const plot = await focusExample("line-lod-plot");
+    if (!plot || !state.lineSeries) return;
+    const selection = {
+      subplotIndex: 0,
+      xMin: 130.2,
+      xMax: 132.0,
+      yMin: -0.55,
+      yMax: 2.15,
+    };
+    const exact = plot.indicesForSelection(selection, state.lineSeries);
+    const csv = plot.exportCSVSelection(selection, state.lineSeries);
+    plot.highlightSelection(selection, state.lineSeries, { name: "workbench selection", size: 6 });
+    plot.setView(124, 138, -0.9, 2.35);
+    setFeatureStatus(`Selection highlighted: ${exact.length.toLocaleString()} exact signal points, CSV bytes=${csv.length.toLocaleString()}.`);
+  }));
+
+  on(exportStateButton, "click", action(async () => {
+    const plot = await focusExample("advanced-api-plot");
+    if (!plot) return;
+    state.savedPlotState = restorablePlotState(plot);
+    const text = plot.exportJSONState({
+      includeData: false,
+      filename: "nbimplot-advanced-state.json",
+    });
+    setFeatureStatus(`Downloaded state JSON (${text.length.toLocaleString()} bytes) and cached it for Restore State.`);
+  }));
+
+  on(restoreStateButton, "click", action(async () => {
+    const plot = await focusExample("advanced-api-plot");
+    if (!plot) return;
+    if (!state.savedPlotState) {
+      state.savedPlotState = restorablePlotState(plot);
+    }
+    plot.setColormap("Hot");
+    plot.setView(0, 45 * 60, -0.35, 0.35);
+    plot.setState(state.savedPlotState);
+    setFeatureStatus("Restored cached plot state: theme, colormap, axis labels, view, and linked-crosshair settings.");
+  }));
+
+  on(copyPngButton, "click", action(async () => {
+    let selected = currentLoadedPlot();
+    if (!selected) {
+      await focusExample("line-lod-plot");
+      selected = ["line-lod-plot", state.plotById.get("line-lod-plot")];
+    }
+    const [id, plot] = selected;
+    if (!plot) return;
+    const blob = await plot.copyPNGToClipboard();
+    setFeatureStatus(`Copied ${id} PNG to clipboard (${blob.size.toLocaleString()} bytes).`);
+  }));
+
+  on(crosshairButton, "click", action(async () => {
+    await focusExample("subplots-plot");
+    state.crosshairEnabled = !state.crosshairEnabled;
+    let updated = 0;
+    for (const plot of state.plots) {
+      plot.setLinkedCrosshair("demo-link", {
+        enabled: state.crosshairEnabled,
+        axis: "xy",
+      });
+      updated += 1;
+    }
+    crosshairButton.textContent = state.crosshairEnabled ? "Disable Crosshair Link" : "Enable Crosshair Link";
+    setFeatureStatus(`${state.crosshairEnabled ? "Enabled" : "Disabled"} linked crosshair on ${updated} active plot(s).`);
+  }));
 
   window.addEventListener("beforeunload", () => state.dispose(), { once: true });
 }
