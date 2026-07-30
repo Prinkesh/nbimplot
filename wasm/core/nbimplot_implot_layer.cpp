@@ -2829,16 +2829,19 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
 
   const std::int32_t rows = std::max(1, subplot_rows);
   const std::int32_t cols = std::max(1, subplot_cols);
+  const bool using_subplots = rows > 1 || cols > 1;
+  // BeginSubplots manages CurrentAlignmentH/V internally; wrapping it in
+  // BeginAlignedPlots makes EndAlignedPlots observe a reset alignment state.
   const bool use_aligned_group =
-      aligned_group_enabled != 0 && aligned_group_id != nullptr &&
-      aligned_group_id[0] != '\0';
+      !using_subplots && aligned_group_enabled != 0 &&
+      aligned_group_id != nullptr && aligned_group_id[0] != '\0';
   bool aligned_group_open = false;
   if (use_aligned_group) {
     aligned_group_open =
         ImPlot::BeginAlignedPlots(aligned_group_id, aligned_group_vertical != 0);
   }
   if (!use_aligned_group || aligned_group_open) {
-    if (rows > 1 || cols > 1) {
+    if (using_subplots) {
       if (ImPlot::BeginSubplots(plot_title, rows, cols, ImVec2(-1.0f, -1.0f),
                                 implot_subplot_flags)) {
         for (std::int32_t r = 0; r < rows; ++r) {

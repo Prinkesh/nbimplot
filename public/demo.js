@@ -1,4 +1,4 @@
-import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=0.1.11";
+import { createPlot, probeWebGL2 } from "./vendor/nbimplot/src/index.js?v=aligned-plots-fix";
 
 const previousDemo = window.__nbimplotExamplesDemo;
 if (previousDemo?.dispose) previousDemo.dispose();
