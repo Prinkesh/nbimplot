@@ -8,7 +8,9 @@ Primary use cases:
 - Fast plotting in Jupyter notebooks without native windows or side processes.
 - Interactive million-point and multi-million-point line charts.
 - Browser/webapp plotting with the same WASM core through `@nbimplot/web`.
-- Scientific and engineering dashboards using ImPlot interactions, linked crosshair, subplots, heatmaps, images, annotations, drag primitives, and streaming updates.
+- Scientific and engineering dashboards using ImPlot interactions, linked crosshair, subplots, heatmaps, images, contours, quiver/vector fields, waterfall/spectrogram views, annotations, drag primitives, and streaming updates.
+- Financial dashboards with WASM-side candlestick and OHLC primitives.
+- Batch multi-series upload, automatic datetime/category x-axis normalization, C++/WASM theme presets, and standalone HTML export.
 - Callback-driven inspection with hover, click, selection, drag-tool, view-change, and performance events.
 - State snapshots, selection highlighting, CSV selection export, JSON state export, theme switching, and PNG clipboard/download export.
 
@@ -40,6 +42,20 @@ p.on_select(lambda plot, event: print(plot.indices_for_selection(event)))
 p.highlight_selection({"x_min": 0, "x_max": 1, "y_min": -1, "y_max": 1})
 ```
 
+Batch/datetime/category/specialty examples:
+```python
+p.lines({"mid": {"x": ts, "y": mid}, "vwap": {"x": ts, "y": vwap}})
+p.scatter("scores", scores, x=["A", "B", "C"])
+p.candlestick("candles", x=x, open=open_, high=high, low=low, close=close)
+p.ohlc("ohlc", x=x, open=open_, high=high, low=low, close=close)
+p.contour("contours", z, levels=levels)
+p.quiver("field", x, y, u, v, normalize=True)
+p.waterfall("waterfall", z)
+p.spectrogram("spectrogram", z, label_fmt="", show_colorbar=True)
+p.set_theme("publication")
+html = p.export_html(title="Standalone nbimplot")
+```
+
 Dataframe column inputs use the same API, not separate `*_df()` methods:
 ```python
 p = ip.Plot(width=900, height=450, title="DataFrame Signal")
@@ -68,6 +84,9 @@ for (let i = 0; i < y.length; i += 1) {
 const h = plot.line("mid", y, { x });
 plot.setTheme("nbimplot");
 plot.setLinkedCrosshair("shared", { axis: "x" });
+plot.lines({ mid: { x, y: mid }, vwap: { x, y: vwap } });
+plot.candlestick("candles", open, high, low, close, { x });
+const html = plot.exportHTML({ title: "Standalone nbimplot" });
 plot.render();
 await plot.downloadPNG("signal.png");
 const state = plot.getState({ includeData: true });
@@ -77,7 +96,9 @@ Important constraints:
 - Requires WebGL2.
 - Strict WASM/ImPlot runtime, no JavaScript renderer fallback.
 - Python accepts NumPy arrays, Series, or dataframe-like objects with column names; after extraction, data still travels as binary `float32` buffers.
+- Datetime inputs become ImPlot time axes; categorical string x inputs become numeric ticks with labels.
 - Line x-data must be finite, equal length with y, and sorted non-decreasing for LOD.
+- Built-in theme presets include `nbimplot`, `notebook`, `publication`, `finance`, `lab`, and `dark-terminal`.
 - Streaming append supports implicit sample indices or explicit x chunks with `h.append(y_chunk, x=x_chunk)` / `h.append(yChunk, { x })`.
 - PNG export uses the existing WASM/ImPlot canvas: `p.export_png(...)`, `p.copy_png_to_clipboard()`, `plot.downloadPNG(...)`, `plot.toDataURL(...)`, `plot.toBlob(...)`, or `plot.copy_png_to_clipboard()`.
 

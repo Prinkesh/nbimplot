@@ -108,6 +108,23 @@ Line `x` buffers must be finite, same length as `y`, and sorted in
 non-decreasing order. `xAxis` chooses the ImPlot axis slot (`x1`, `x2`, `x3`);
 it is separate from the x-data buffer.
 
+Batch related time-series with `lines(...)`:
+
+```js
+plot.lines({
+  mid: { x, y: mid, color: "#1f6f66" },
+  vwap: { x, y: vwap, color: "#b74b2b" },
+});
+```
+
+`Date` arrays become ImPlot time axes automatically. String/category arrays are
+mapped to numeric ticks and labels:
+
+```js
+plot.line("session latency", latency, { x: dateArray });
+plot.scatter("model scores", scores, { x: ["baseline", "candidate", "prod"] });
+```
+
 ## Heatmaps and Images
 
 Flat arrays need explicit shape:
@@ -139,6 +156,39 @@ await plot.copy_png_to_clipboard();
 
 Export redraws the strict WASM/ImPlot canvas immediately before reading pixels;
 it does not use a JavaScript plotting fallback.
+
+For a standalone shareable page:
+
+```js
+const html = plot.exportHTML({ title: "Signal Export" });
+const htmlAlias = plot.export_html({ title: "Signal Export" });
+console.log(html.length, htmlAlias.length);
+```
+
+The HTML export reloads `@nbimplot/web` and the packaged WASM assets.
+
+## Themes And Specialty Plots
+
+Theme presets are applied inside the C++/WASM layer:
+
+```js
+plot.setTheme("nbimplot");
+plot.setTheme("publication");
+plot.setTheme("finance");
+plot.setTheme("lab");
+plot.setTheme("dark-terminal");
+```
+
+Financial and scientific helpers route into the ImPlot/WASM primitive path:
+
+```js
+plot.candlestick("candles", open, high, low, close, { x, width: 0.7 });
+plot.ohlc("ohlc", open, high, low, close, { x, width: 0.35 });
+plot.quiver("field", x, y, u, v, { scale: 0.08, normalize: true });
+plot.contour("contours", z, { rows, cols, levels, bounds: [[-3, -3], [3, 3]] });
+plot.waterfall("waterfall", z, { rows, cols, scale: 0.18 });
+plot.spectrogram("spectrogram", z, { rows, cols, labelFmt: "", showColorbar: true });
+```
 
 ## Streaming, Selection, State, and Dashboards
 

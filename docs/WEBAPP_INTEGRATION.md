@@ -84,6 +84,30 @@ const jsonAlias = plot.export_json_state({ includeData: true });
 console.log(json, jsonAlias);
 ```
 
+Batch lines, theme presets, standalone HTML state export, and specialty
+financial/scientific primitives are available in the same direct web API:
+
+```js
+plot.lines({
+  bid: { x, y: bid, color: "#1f6f66" },
+  ask: { x, y: ask, color: "#b74b2b" },
+});
+
+plot.line("datetime", latency, { x: dateArray });
+plot.scatter("category", scores, { x: ["A", "B", "C"] });
+plot.setTheme("finance");
+plot.candlestick("candles", open, high, low, close, { x, width: 0.7 });
+plot.ohlc("ohlc", open, high, low, close, { x, width: 0.35 });
+plot.quiver("field", xField, yField, uField, vField, { scale: 0.08, normalize: true });
+plot.contour("contour", matrix, { rows, cols, levels });
+plot.waterfall("waterfall", matrix, { rows, cols, scale: 0.18 });
+plot.spectrogram("spectrogram", matrix, { rows, cols, labelFmt: "", showColorbar: true });
+
+const html = plot.exportHTML({ title: "Desk Snapshot" });
+const htmlAlias = plot.export_html({ title: "Desk Snapshot" });
+console.log(html.length, htmlAlias.length);
+```
+
 ## React Pattern
 
 ```jsx

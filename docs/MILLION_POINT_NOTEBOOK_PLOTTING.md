@@ -2,7 +2,11 @@
 
 `nbimplot` is designed around a simple performance rule: render only what the screen can show.
 
-For line plots with many visible points, the WASM core switches from raw points to min/max LOD buckets. The target rendered point count is proportional to canvas width, not dataset length.
+For line plots with many visible points, the WASM core switches from raw points
+to min/max LOD buckets. The target rendered point count is proportional to
+canvas width, not dataset length. Large series keep a reusable multiresolution
+LOD pyramid so pan/zoom can summarize visible buckets from cached min/max
+levels instead of rescanning every raw point.
 
 ## Core Pattern
 

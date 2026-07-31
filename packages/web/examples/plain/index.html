@@ -69,6 +69,9 @@
 
       <section class="grid">
         <div id="line" class="plot"></div>
+        <div id="batch" class="plot"></div>
+        <div id="finance" class="plot"></div>
+        <div id="science" class="plot"></div>
         <div id="heatmap" class="plot"></div>
       </section>
     </main>
@@ -97,6 +100,59 @@
         lineWeight: 2,
       });
 
+      const samples = 240;
+      const dates = new Array(samples);
+      const mid = new Float32Array(samples);
+      const vwap = new Float32Array(samples);
+      for (let i = 0; i < samples; i += 1) {
+        dates[i] = new Date(Date.UTC(2026, 0, 1, 9, 30) + i * 60_000);
+        mid[i] = Math.sin(i * 0.04);
+        vwap[i] = mid[i] + 0.08 * Math.cos(i * 0.11);
+      }
+      const batchPlot = await createPlot("#batch", {
+        width: 1100,
+        height: 360,
+        title: "Batch Lines + Datetime + Categories",
+        responsive: true,
+      });
+      batchPlot.setTheme("publication");
+      batchPlot.setSubplots(1, 2);
+      batchPlot.lines({
+        mid: { x: dates, y: mid, color: "#1f6f66" },
+        vwap: { x: dates, y: vwap, color: "#b74b2b" },
+      }, { subplotIndex: 0 });
+      batchPlot.scatter("scores", new Float32Array([0.72, 0.91, 0.64]), {
+        x: ["baseline", "candidate", "prod"],
+        subplotIndex: 1,
+        size: 6,
+      });
+      console.log(batchPlot.exportHTML({ title: "nbimplot batch export" }).length);
+
+      const bars = 120;
+      const bx = new Float32Array(bars);
+      const open = new Float32Array(bars);
+      const high = new Float32Array(bars);
+      const low = new Float32Array(bars);
+      const close = new Float32Array(bars);
+      let price = 100;
+      for (let i = 0; i < bars; i += 1) {
+        bx[i] = i;
+        open[i] = price;
+        close[i] = price + Math.sin(i * 0.13) + 0.35 * Math.cos(i * 0.31);
+        high[i] = Math.max(open[i], close[i]) + 1.2;
+        low[i] = Math.min(open[i], close[i]) - 1.2;
+        price = close[i];
+      }
+      const financePlot = await createPlot("#finance", {
+        width: 1100,
+        height: 360,
+        title: "Candlestick + OHLC",
+        responsive: true,
+      });
+      financePlot.setTheme("finance");
+      financePlot.candlestick("candles", open, high, low, close, { x: bx, width: 0.7 });
+      financePlot.ohlc("ohlc", open, high, low, close, { x: bx, width: 0.35 });
+
       const rows = 80;
       const cols = 120;
       const z = new Float32Array(rows * cols);
@@ -105,6 +161,56 @@
           z[r * cols + c] = Math.sin(r * 0.15) * Math.cos(c * 0.09);
         }
       }
+
+      const sciencePlot = await createPlot("#science", {
+        width: 1100,
+        height: 520,
+        title: "Contour + Quiver + Waterfall + Spectrogram",
+        responsive: true,
+        colormap: "Viridis",
+      });
+      sciencePlot.setTheme("lab");
+      sciencePlot.setSubplots(2, 2);
+      const qn = 10;
+      const qx = new Float32Array(qn * qn);
+      const qy = new Float32Array(qn * qn);
+      const qu = new Float32Array(qn * qn);
+      const qv = new Float32Array(qn * qn);
+      for (let r = 0, k = 0; r < qn; r += 1) {
+        const yy = -3 + (6 * r) / (qn - 1);
+        for (let c = 0; c < qn; c += 1, k += 1) {
+          const xx = -3 + (6 * c) / (qn - 1);
+          qx[k] = xx;
+          qy[k] = yy;
+          qu[k] = -yy;
+          qv[k] = xx;
+        }
+      }
+      sciencePlot.contour("contour", z, {
+        rows,
+        cols,
+        levels: new Float32Array([-0.8, -0.4, 0, 0.4, 0.8]),
+        bounds: [[-3, -3], [3, 3]],
+        subplotIndex: 0,
+      });
+      sciencePlot.quiver("field", qx, qy, qu, qv, {
+        normalize: true,
+        scale: 0.08,
+        subplotIndex: 1,
+      });
+      sciencePlot.waterfall("waterfall", z.subarray(0, 16 * cols), {
+        rows: 16,
+        cols,
+        scale: 0.2,
+        subplotIndex: 2,
+      });
+      sciencePlot.spectrogram("spectrogram", z, {
+        rows,
+        cols,
+        labelFmt: "",
+        showColorbar: true,
+        subplotIndex: 3,
+      });
 
       const heatmapPlot = await createPlot("#heatmap", {
         width: 1100,

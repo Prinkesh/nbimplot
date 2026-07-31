@@ -1,6 +1,6 @@
-import createNbImPlotModule from "../wasm/nbimplot_wasm.js?v=feature-dashboard";
+import createNbImPlotModule from "../wasm/nbimplot_wasm.js";
 
-const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm?v=feature-dashboard", import.meta.url);
+const DEFAULT_WASM_URL = new URL("../wasm/nbimplot_wasm.wasm", import.meta.url);
 const LABEL_SEP = "\x1f";
 const PIE_FMT_SEP = "\x1e";
 const HEATMAP_META_SEP = "\x1d";
@@ -60,6 +60,12 @@ export const PRIMITIVE_KIND_CODES = Object.freeze({
   drag_drop_plot: 30,
   drag_drop_axis: 31,
   drag_drop_legend: 32,
+  candlestick: 33,
+  ohlc: 34,
+  quiver: 35,
+  contour: 36,
+  waterfall: 37,
+  spectrogram: 38,
 });
 
 export const AXES = Object.freeze({
@@ -192,7 +198,38 @@ function downloadBlob(blob, filename) {
 }
 
 function ensureLineX(value, yLength) {
-  const out = ensureVector(value, "x");
+  const meta = ensureLineXMeta(value, yLength);
+  return meta.values;
+}
+
+function normalizeAxisVector(value, name = "x", options = {}) {
+  if (Array.isArray(value)) {
+    if (value.length === 0) throw new Error(`${name} must not be empty.`);
+    if (value.every((item) => item instanceof Date)) {
+      return { values: Float32Array.from(value, (item) => item.getTime() / 1000), kind: "datetime", labels: null };
+    }
+    if (options.allowCategories !== false && value.every((item) => typeof item === "string" || item == null)) {
+      const labels = [];
+      const seen = new Map();
+      const values = new Float32Array(value.length);
+      for (let i = 0; i < value.length; i += 1) {
+        const label = String(value[i] ?? "");
+        if (!seen.has(label)) {
+          seen.set(label, labels.length);
+          labels.push(label);
+        }
+        values[i] = seen.get(label);
+      }
+      return { values, kind: "category", labels };
+    }
+  }
+  const out = ensureVector(value, name);
+  return { values: out, kind: "linear", labels: null };
+}
+
+function ensureLineXMeta(value, yLength) {
+  const meta = normalizeAxisVector(value, "x");
+  const out = meta.values;
   if (out.length !== yLength) {
     throw new Error("x and y must have the same length.");
   }
@@ -207,7 +244,7 @@ function ensureLineX(value, yLength) {
     }
     previous = current;
   }
-  return out;
+  return meta;
 }
 
 function concatFloat32(a, b) {
@@ -802,6 +839,11 @@ class WasmCoreSession {
     return this.withCString(name || "", (ptr) => this.module._nbp_set_colormap(this.handle, ptr) === 0);
   }
 
+  setTheme(name) {
+    if (typeof this.module._nbp_set_theme !== "function") return false;
+    return this.withCString(name || "", (ptr) => this.module._nbp_set_theme(this.handle, ptr) === 0);
+  }
+
   setView(view) {
     this.module._nbp_set_view(this.handle, view.xMin, view.xMax, view.yMin, view.yMax);
     return true;
@@ -893,8 +935,10 @@ class LineHandle {
     this.plot._assertReady();
     const data = ensureVector(y, "y");
     let xData = null;
+    let xMeta = null;
     if (options.x != null) {
-      xData = ensureLineX(options.x, data.length);
+      xMeta = ensureLineXMeta(options.x, data.length);
+      xData = xMeta.values;
     } else if (this.xData) {
       if (data.length !== this.xData.length) {
         throw new Error("x must be provided when resizing a custom-x line.");
@@ -915,6 +959,11 @@ class LineHandle {
     if (this.record) {
       this.record.data = upload;
       this.record.xData = uploadX || null;
+      if (xMeta) {
+        this.record.xKind = xMeta.kind;
+        this.record.xLabels = xMeta.labels || null;
+        this.plot._applyAxisMeta(this.record.xAxis, xMeta);
+      }
     }
     this.plot._afterDataChange();
     return this;
@@ -924,7 +973,8 @@ class LineHandle {
     this.plot._assertReady();
     if (this.paused) return this;
     const appended = ensureVector(y, "y");
-    const appendX = options.x != null ? ensureLineX(options.x, appended.length) : null;
+    const appendMeta = options.x != null ? ensureLineXMeta(options.x, appended.length) : null;
+    const appendX = appendMeta ? appendMeta.values : null;
     if (this.xData && !appendX) {
       throw new Error("x must be provided when appending to a custom-x line.");
     }
@@ -1242,6 +1292,7 @@ export class WebPlot {
     this.wasm.setPlotOptions(this.plotFlags, this.axisScaleX, this.axisScaleY);
     this.wasm.setSubplots(this.subplotRows, this.subplotCols, this.subplotFlags);
     this.wasm.setColormap(this.colormapName);
+    this.wasm.setTheme(this.themeName || "nbimplot");
     for (let axis = 0; axis < this.axisState.length; axis += 1) {
       const state = this.axisState[axis];
       this.wasm.setAxisState(axis, state.enabled, state.scale);
@@ -1785,7 +1836,8 @@ export class WebPlot {
     this._assertReady();
     const token = this.nextSeriesToken++;
     const data = ensureVector(y, "y");
-    const xData = options.x != null ? ensureLineX(options.x, data.length) : null;
+    const xMeta = options.x != null ? ensureLineXMeta(options.x, data.length) : null;
+    const xData = xMeta ? xMeta.values : null;
     const [xAxis, yAxis] = axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1");
     const capacity = Math.max(0, Number(options.maxPoints || options.max_points || 0) | 0);
     const upload = capacity > 0 && data.length > capacity ? data.subarray(data.length - capacity) : data;
@@ -1812,6 +1864,8 @@ export class WebPlot {
       name: String(name || ""),
       data: upload,
       xData: uploadX || null,
+      xKind: xMeta ? xMeta.kind : "linear",
+      xLabels: xMeta ? xMeta.labels || null : null,
       subplotIndex: Number(options.subplotIndex ?? options.subplot_index ?? 0) | 0,
       xAxis,
       yAxis,
@@ -1823,6 +1877,7 @@ export class WebPlot {
       streamAutoscaleY: Boolean(options.autoscaleY ?? options.autoscale_y),
     };
     this.seriesByToken.set(token, record);
+    if (xMeta) this._applyAxisMeta(xAxis, xMeta);
     this._afterDataChange();
     return new LineHandle(this, token, {
       capacity,
@@ -1830,6 +1885,46 @@ export class WebPlot {
       record,
       autoRender: record.streamAutoRender,
       autoscaleY: record.streamAutoscaleY,
+    });
+  }
+
+  lines(series, options = {}) {
+    this._assertReady();
+    const items = [];
+    if (series && typeof series === "object" && !Array.isArray(series) && !(ArrayBuffer.isView(series))) {
+      for (const [name, value] of Object.entries(series)) {
+        if (value && typeof value === "object" && !ArrayBuffer.isView(value) && ("y" in value || "data" in value)) {
+          items.push({
+            name,
+            y: value.y ?? value.data,
+            x: value.x ?? options.x,
+            options: value,
+          });
+        } else {
+          items.push({ name, y: value, x: options.x, options: {} });
+        }
+      }
+    } else if (Array.isArray(series)) {
+      for (let i = 0; i < series.length; i += 1) {
+        const item = series[i];
+        if (Array.isArray(item)) {
+          if (item.length === 2) items.push({ name: item[0], y: item[1], x: options.x, options: {} });
+          else if (item.length === 3) items.push({ name: item[0], x: item[1], y: item[2], options: {} });
+          else throw new Error("lines array entries must be [name, y], [name, x, y], or objects.");
+        } else if (item && typeof item === "object") {
+          items.push({ name: item.name ?? `series_${i}`, y: item.y ?? item.data, x: item.x ?? options.x, options: item });
+        } else {
+          throw new Error("lines array entries must be [name, y], [name, x, y], or objects.");
+        }
+      }
+    } else {
+      throw new TypeError("lines() requires an object mapping or an array of series descriptors.");
+    }
+    return items.map((item, index) => {
+      if (item.y == null) throw new Error("Each lines() item must provide y/data.");
+      const colors = options.colors;
+      const color = Array.isArray(colors) && colors.length === items.length ? colors[index] : item.options.color ?? options.color;
+      return this.line(item.name, item.y, { ...options, ...item.options, color, x: item.x });
     });
   }
 
@@ -1870,19 +1965,23 @@ export class WebPlot {
     const yv = ensureVector(y, "y");
     const buffers = [];
     let hasX = false;
+    let xMeta = null;
     if (options.x != null) {
-      const xv = ensureVector(options.x, "x");
+      xMeta = normalizeAxisVector(options.x, "x");
+      const xv = xMeta.values;
       if (xv.length !== yv.length) throw new Error("x and y must have the same length.");
       buffers.push(xv);
       hasX = true;
     }
     buffers.push(yv);
-    return this.primitive(kind, {
+    const handle = this.primitive(kind, {
       name,
       hasX,
       length: yv.length,
       ...options,
     }, buffers);
+    if (xMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[0], xMeta);
+    return handle;
   }
 
   scatter(name, y, options = {}) {
@@ -1895,14 +1994,18 @@ export class WebPlot {
     if (yv.length !== sv.length) throw new Error("y and sizes must have the same length.");
     const buffers = [];
     let hasX = false;
+    let xMeta = null;
     if (options.x != null) {
-      const xv = ensureVector(options.x, "x");
+      xMeta = normalizeAxisVector(options.x, "x");
+      const xv = xMeta.values;
       if (xv.length !== yv.length) throw new Error("x, y, and sizes must have the same length.");
       buffers.push(xv);
       hasX = true;
     }
     buffers.push(yv, sv);
-    return this.primitive("bubbles", { name, hasX, length: yv.length, ...options }, buffers);
+    const handle = this.primitive("bubbles", { name, hasX, length: yv.length, ...options }, buffers);
+    if (xMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[0], xMeta);
+    return handle;
   }
 
   stairs(name, y, options = {}) {
@@ -1945,11 +2048,12 @@ export class WebPlot {
 
   barsH(name, x, options = {}) {
     const xv = ensureVector(x, "x");
-    const yv = options.y == null
-      ? Float32Array.from({ length: xv.length }, (_, i) => i)
-      : ensureVector(options.y, "y");
+    const yMeta = options.y == null ? null : normalizeAxisVector(options.y, "y");
+    const yv = yMeta ? yMeta.values : Float32Array.from({ length: xv.length }, (_, i) => i);
     if (xv.length !== yv.length) throw new Error("x and y must have the same length.");
-    return this.primitive("bars_h", { name, length: xv.length, barHeight: options.barHeight ?? 0.67, ...options }, [xv, yv]);
+    const handle = this.primitive("bars_h", { name, length: xv.length, barHeight: options.barHeight ?? 0.67, ...options }, [xv, yv]);
+    if (yMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[1], yMeta);
+    return handle;
   }
 
   bars_h(name, x, options = {}) {
@@ -1962,14 +2066,18 @@ export class WebPlot {
     if (a.length !== b.length) throw new Error("y1 and y2 must have the same length.");
     const buffers = [];
     let hasX = false;
+    let xMeta = null;
     if (options.x != null) {
-      const xv = ensureVector(options.x, "x");
+      xMeta = normalizeAxisVector(options.x, "x");
+      const xv = xMeta.values;
       if (xv.length !== a.length) throw new Error("x and y arrays must have the same length.");
       buffers.push(xv);
       hasX = true;
     }
     buffers.push(a, b);
-    return this.primitive("shaded", { name, hasX, length: a.length, alpha: options.alpha ?? 0.2, ...options }, buffers);
+    const handle = this.primitive("shaded", { name, hasX, length: a.length, alpha: options.alpha ?? 0.2, ...options }, buffers);
+    if (xMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[0], xMeta);
+    return handle;
   }
 
   errorBars(name, y, options = {}) {
@@ -1993,13 +2101,17 @@ export class WebPlot {
       buffers.push(yv, err);
     }
     let hasX = false;
+    let xMeta = null;
     if (options.x != null) {
-      const xv = ensureVector(options.x, "x");
+      xMeta = normalizeAxisVector(options.x, "x");
+      const xv = xMeta.values;
       if (xv.length !== yv.length) throw new Error("x and y must have the same length.");
       buffers.unshift(xv);
       hasX = true;
     }
-    return this.primitive("error_bars", { name, hasX, asymmetric, length: yv.length, ...options }, buffers);
+    const handle = this.primitive("error_bars", { name, hasX, asymmetric, length: yv.length, ...options }, buffers);
+    if (xMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[0], xMeta);
+    return handle;
   }
 
   error_bars(name, y, options = {}) {
@@ -2008,9 +2120,8 @@ export class WebPlot {
 
   errorBarsH(name, x, options = {}) {
     const xv = ensureVector(x, "x");
-    const yv = options.y == null
-      ? Float32Array.from({ length: xv.length }, (_, i) => i)
-      : ensureVector(options.y, "y");
+    const yMeta = options.y == null ? null : normalizeAxisVector(options.y, "y");
+    const yv = yMeta ? yMeta.values : Float32Array.from({ length: xv.length }, (_, i) => i);
     if (xv.length !== yv.length) throw new Error("x and y must have the same length.");
     let err;
     let asymmetric = false;
@@ -2028,7 +2139,9 @@ export class WebPlot {
       err = ensureVector(options.err, "err");
       if (err.length !== xv.length) throw new Error("err must match x length.");
     }
-    return this.primitive("error_bars_h", { name, asymmetric, length: xv.length, ...options }, [xv, err, yv]);
+    const handle = this.primitive("error_bars_h", { name, asymmetric, length: xv.length, ...options }, [xv, err, yv]);
+    if (yMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[1], yMeta);
+    return handle;
   }
 
   error_bars_h(name, x, options = {}) {
@@ -2120,6 +2233,120 @@ export class WebPlot {
       imageFlags: options.imageFlags ?? options.image_flags ?? 0,
       ...options,
     }, [image.data, tint]);
+  }
+
+  candlestick(name, open, high, low, close, options = {}) {
+    return this._ohlcPrimitive("candlestick", name, open, high, low, close, options);
+  }
+
+  ohlc(name, open, high, low, close, options = {}) {
+    return this._ohlcPrimitive("ohlc", name, open, high, low, close, options);
+  }
+
+  _ohlcPrimitive(kind, name, open, high, low, close, options = {}) {
+    const ov = ensureVector(open, "open");
+    const hv = ensureVector(high, "high");
+    const lv = ensureVector(low, "low");
+    const cv = ensureVector(close, "close");
+    const n = ov.length;
+    if (hv.length !== n || lv.length !== n || cv.length !== n) throw new Error("open, high, low, and close must have the same length.");
+    const xMeta = options.x != null ? normalizeAxisVector(options.x, "x", { allowCategories: false }) : { values: rangeFloat32(n), kind: "linear" };
+    if (xMeta.values.length !== n) throw new Error("x and OHLC arrays must have the same length.");
+    const packed = new Float32Array(n * 3);
+    for (let i = 0; i < n; i += 1) {
+      packed[i * 3] = hv[i];
+      packed[i * 3 + 1] = lv[i];
+      packed[i * 3 + 2] = cv[i];
+    }
+    const handle = this.primitive(kind, { name, hasX: true, length: n, width: options.width ?? 0.6, ...options }, [xMeta.values, ov, packed]);
+    if (xMeta.kind !== "linear") this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[0], xMeta);
+    return handle;
+  }
+
+  quiver(name, x, y, u, v, options = {}) {
+    const xm = normalizeAxisVector(x, "x");
+    const ym = normalizeAxisVector(y, "y");
+    const uv = ensureVector(u, "u");
+    const vv = ensureVector(v, "v");
+    const n = xm.values.length;
+    if (ym.values.length !== n || uv.length !== n || vv.length !== n) throw new Error("x, y, u, and v must have the same length.");
+    const packed = new Float32Array(n * 2);
+    for (let i = 0; i < n; i += 1) {
+      packed[i * 2] = uv[i];
+      packed[i * 2 + 1] = vv[i];
+    }
+    const handle = this.primitive("quiver", { name, length: n, scale: options.scale ?? 1, normalize: Boolean(options.normalize), ...options }, [xm.values, ym.values, packed]);
+    const [xAxis, yAxis] = axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1");
+    this._applyAxisMeta(xAxis, xm);
+    this._applyAxisMeta(yAxis, ym);
+    return handle;
+  }
+
+  contour(name, z, options = {}) {
+    const matrix = normalizeMatrix(z, options, "z");
+    const bounds = options.bounds || [[0, 0], [Math.max(1, matrix.cols - 1), Math.max(1, matrix.rows - 1)]];
+    let levels = options.levels ?? 10;
+    let levelBuffer = new Float32Array(0);
+    let levelCount = Number(levels) | 0;
+    if (Array.isArray(levels) || ArrayBuffer.isView(levels)) {
+      levelBuffer = ensureVector(levels, "levels");
+      levelCount = levelBuffer.length;
+    }
+    return this.primitive("contour", {
+      name,
+      rows: matrix.rows,
+      cols: matrix.cols,
+      levels: levelCount,
+      boundsXMin: bounds[0][0],
+      boundsYMin: bounds[0][1],
+      boundsXMax: bounds[1][0],
+      boundsYMax: bounds[1][1],
+      lineWeight: options.lineWeight ?? options.line_weight ?? 1,
+      ...options,
+    }, [matrix.data, levelBuffer]);
+  }
+
+  waterfall(name, z, options = {}) {
+    const matrix = normalizeMatrix(z, options, "z");
+    const xMeta = options.x != null ? normalizeAxisVector(options.x, "x") : null;
+    if (xMeta && xMeta.values.length !== matrix.cols) throw new Error("x length must match z column count.");
+    const offsets = options.yOffsets != null || options.y_offsets != null
+      ? ensureVector(options.yOffsets ?? options.y_offsets, "yOffsets")
+      : new Float32Array(0);
+    if (offsets.length !== 0 && offsets.length !== matrix.rows) throw new Error("yOffsets length must match z row count.");
+    const handle = this.primitive("waterfall", {
+      name,
+      rows: matrix.rows,
+      cols: matrix.cols,
+      hasX: Boolean(xMeta),
+      scale: options.scale ?? 1,
+      ...options,
+    }, [matrix.data, xMeta ? xMeta.values : new Float32Array(0), offsets]);
+    if (xMeta) this._applyAxisMeta(axesCodes(options.xAxis || options.x_axis || "x1", options.yAxis || options.y_axis || "y1")[0], xMeta);
+    return handle;
+  }
+
+  spectrogram(name, z, options = {}) {
+    const matrix = normalizeMatrix(z, options, "z");
+    const bounds = options.bounds || [[0, 0], [matrix.cols, matrix.rows]];
+    return this.primitive("spectrogram", {
+      name,
+      rows: matrix.rows,
+      cols: matrix.cols,
+      labelFmt: options.labelFmt ?? options.label_fmt ?? "",
+      scaleMin: options.scaleMin ?? options.scale_min,
+      scaleMax: options.scaleMax ?? options.scale_max,
+      heatmapFlags: options.heatmapFlags ?? options.heatmap_flags ?? 0,
+      showColorbar: options.showColorbar ?? options.show_colorbar ?? true,
+      colorbarLabel: options.colorbarLabel ?? options.colorbar_label ?? "",
+      colorbarFormat: options.colorbarFormat ?? options.colorbar_format ?? "%g",
+      colorbarFlags: options.colorbarFlags ?? options.colorbar_flags ?? 0,
+      boundsXMin: bounds[0][0],
+      boundsYMin: bounds[0][1],
+      boundsXMax: bounds[1][0],
+      boundsYMax: bounds[1][1],
+      ...options,
+    }, [matrix.data]);
   }
 
   pieChart(name, values, options = {}) {
@@ -2374,6 +2601,24 @@ export class WebPlot {
     return this;
   }
 
+  _applyAxisMeta(axis, meta) {
+    if (!meta || !Number.isFinite(Number(axis))) return;
+    const code = Math.min(5, Math.max(0, Number(axis) | 0));
+    if (meta.kind === "datetime") {
+      this.axisState[code] = { enabled: true, scale: AXIS_SCALES.time };
+      if (code === AXES.x1) this.axisScaleX = AXIS_SCALES.time;
+      if (code === AXES.y1) this.axisScaleY = AXIS_SCALES.time;
+      this.wasm.setAxisState(code, true, AXIS_SCALES.time);
+      if (code === AXES.x1 || code === AXES.y1) {
+        this.wasm.setPlotOptions(this.plotFlags, this.axisScaleX, this.axisScaleY);
+      }
+    } else if (meta.kind === "category" && Array.isArray(meta.labels) && meta.labels.length > 0) {
+      const ticks = Float32Array.from({ length: meta.labels.length }, (_, i) => i);
+      this.axisTicks.set(code, { ticks, labels: meta.labels.map(String), keepDefault: false });
+      this.wasm.setAxisTicks(code, ticks, meta.labels, false);
+    }
+  }
+
   set_time_axis(axis = "x1") {
     return this.setTimeAxis(axis);
   }
@@ -2536,6 +2781,7 @@ export class WebPlot {
   setTheme(name = "nbimplot") {
     this.themeName = String(name || "nbimplot");
     if (this.wrapper) this.wrapper.dataset.nbimplotTheme = this.themeName;
+    this.wasm.setTheme(this.themeName);
     this.requestRender();
     return this;
   }
@@ -2748,6 +2994,42 @@ export class WebPlot {
     return this.exportJSONState(options);
   }
 
+  exportHTML(options = {}) {
+    const state = this.getState({ includeData: options.includeData ?? options.include_data ?? true });
+    const runtime = options.runtimeUrl || options.runtime_url || "https://esm.sh/@nbimplot/web";
+    const title = String(options.title || this.title || "nbimplot export").replace(/[<>&"]/g, (ch) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "\"": "&quot;" }[ch]));
+    const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${title}</title>
+  <style>html,body{margin:0;min-height:100%;background:#071013;color:#e8f2ee;font-family:ui-sans-serif,system-ui,sans-serif}main{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}#plot{width:min(100%,${this.width}px)}</style>
+</head>
+<body>
+  <main><div id="plot"></div></main>
+  <script id="nbimplot-state" type="application/json">${JSON.stringify(state)}</script>
+  <script type="module">
+    import { createPlot } from "${runtime}";
+    const state = JSON.parse(document.getElementById("nbimplot-state").textContent);
+    const plot = await createPlot("#plot", { width: state.width, height: state.height, title: state.title, theme: state.theme || "nbimplot" });
+    plot.setState(state);
+    plot.render();
+    window.nbimplot = plot;
+  </script>
+</body>
+</html>`;
+    if (options.download || options.filename) {
+      const filename = String(options.filename || "nbimplot-export.html").replace(/[\\/:*?"<>|]+/g, "_");
+      downloadBlob(new Blob([html], { type: "text/html;charset=utf-8" }), /\.html?$/i.test(filename) ? filename : `${filename}.html`);
+    }
+    return html;
+  }
+
+  export_html(options = {}) {
+    return this.exportHTML(options);
+  }
+
   getView() {
     this._assertReady();
     return this.wasm.getView();
@@ -2828,6 +3110,43 @@ export class WebPlot {
         floats[5] = Number(payload.uv0Y ?? payload.uv0_y ?? 0);
         floats[6] = Number(payload.uv1X ?? payload.uv1_x ?? 1);
         floats[7] = Number(payload.uv1Y ?? payload.uv1_y ?? 1);
+        break;
+      case "candlestick":
+      case "ohlc":
+        floats[1] = Number(payload.width ?? 0.6);
+        break;
+      case "quiver":
+        ints[1] = payload.normalize ? 1 : 0;
+        floats[1] = Number(payload.scale ?? 1);
+        break;
+      case "contour":
+        ints[1] = Number(payload.rows || 0) | 0;
+        ints[2] = Number(payload.cols || 0) | 0;
+        ints[6] = Math.max(0, Number(payload.levels || 0) | 0);
+        floats[0] = Number(payload.boundsXMin ?? payload.bounds_x_min ?? 0);
+        floats[1] = Number(payload.boundsXMax ?? payload.bounds_x_max ?? payload.cols ?? 0);
+        floats[2] = Number(payload.boundsYMin ?? payload.bounds_y_min ?? 0);
+        floats[3] = Number(payload.boundsYMax ?? payload.bounds_y_max ?? payload.rows ?? 0);
+        floats[4] = Number(payload.lineWeight ?? payload.line_weight ?? 1);
+        break;
+      case "waterfall":
+        ints[1] = Number(payload.rows || 0) | 0;
+        ints[2] = Number(payload.cols || 0) | 0;
+        floats[1] = Number(payload.scale ?? 1);
+        break;
+      case "spectrogram":
+        ints[1] = Number(payload.rows || 0) | 0;
+        ints[2] = Number(payload.cols || 0) | 0;
+        ints[3] = Math.max(0, Number(payload.heatmapFlags ?? payload.heatmap_flags ?? 0) | 0);
+        ints[0] = (payload.showColorbar ?? payload.show_colorbar) ? 1 : 0;
+        ints[6] = Math.max(0, Number(payload.colorbarFlags ?? payload.colorbar_flags ?? 0) | 0);
+        floats[0] = payload.scaleMin != null || payload.scale_min != null ? Number(payload.scaleMin ?? payload.scale_min) : Number.NaN;
+        floats[1] = payload.scaleMax != null || payload.scale_max != null ? Number(payload.scaleMax ?? payload.scale_max) : Number.NaN;
+        floats[2] = Number(payload.boundsXMin ?? payload.bounds_x_min ?? 0);
+        floats[3] = Number(payload.boundsXMax ?? payload.bounds_x_max ?? payload.cols ?? 0);
+        floats[4] = Number(payload.boundsYMin ?? payload.bounds_y_min ?? 0);
+        floats[5] = Number(payload.boundsYMax ?? payload.bounds_y_max ?? payload.rows ?? 0);
+        text = `${labelFormatOrDefault(payload.labelFmt ?? payload.label_fmt, "")}${HEATMAP_META_SEP}${String(payload.colorbarLabel ?? payload.colorbar_label ?? "")}${HEATMAP_META_SEP}${labelFormatOrDefault(payload.colorbarFormat ?? payload.colorbar_format, "%g")}`;
         break;
       case "tag_x":
         floats[4] = Number(payload.value || 0);

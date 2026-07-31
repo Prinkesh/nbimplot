@@ -1087,6 +1087,131 @@ def test_error_bars_asymmetric_payload_and_image_flags():
     np.testing.assert_allclose(tint, np.array([0.2, 0.4, 0.6, 0.8], dtype=np.float32))
 
 
+def test_batch_lines_datetime_and_single_rgba_color_payloads():
+    plot = ip.Plot()
+    sent = _capture_messages(plot)
+
+    dates = np.array(["2026-01-01", "2026-01-02", "2026-01-03"], dtype="datetime64[s]")
+    handles = plot.lines(
+        {
+            "a": np.array([1.0, 2.0, 3.0], dtype=np.float32),
+            "b": np.array([2.0, 3.0, 4.0], dtype=np.float32),
+            "c": np.array([3.0, 4.0, 5.0], dtype=np.float32),
+            "d": np.array([4.0, 5.0, 6.0], dtype=np.float32),
+        },
+        x=dates,
+        colors=(0.1, 0.2, 0.3, 0.4),
+    )
+    assert len(handles) == 4
+    content, buffers = sent[0]
+    assert content["type"] == "lines"
+    assert len(content["items"]) == 4
+    assert len(buffers) == 8
+    assert all(item["has_color"] is True for item in content["items"])
+    assert all(item["color_r"] == 0.1 for item in content["items"])
+    assert all(item["has_x"] is True for item in content["items"])
+    axis_messages = [msg for msg, _ in sent if msg.get("type") == "axis_state"]
+    assert axis_messages
+    assert axis_messages[-1]["axis"] == 0
+    assert axis_messages[-1]["scale"] == 2
+
+    plot2 = ip.Plot()
+    sent2 = _capture_messages(plot2)
+    x = np.arange(3, dtype=np.float32)
+    handles2 = plot2.lines(
+        {
+            "mid": {"x": x, "y": np.array([1.0, 2.0, 3.0], dtype=np.float32), "color": "#1f6f66"},
+            "vwap": {"x": x, "data": np.array([1.5, 2.5, 3.5], dtype=np.float32), "color": "#b74b2b"},
+        },
+        line_weight=1.5,
+    )
+    assert len(handles2) == 2
+    content2, buffers2 = sent2[0]
+    assert content2["type"] == "lines"
+    assert len(content2["items"]) == 2
+    assert all(item["has_x"] for item in content2["items"])
+    assert all(item["has_color"] for item in content2["items"])
+    assert len(buffers2) == 4
+
+
+def test_categorical_axis_inputs_emit_axis_ticks():
+    plot = ip.Plot()
+    sent = _capture_messages(plot)
+
+    plot.bars("by-sector", np.array([3.0, 5.0, 2.0], dtype=np.float32), x=["energy", "tech", "health"])
+    primitive = next(msg for msg, _ in sent if msg.get("type") == "primitive_add")
+    assert primitive["kind"] == "bars"
+    assert primitive["has_x"] is True
+    ticks = [(msg, buffers) for msg, buffers in sent if msg.get("type") == "axis_ticks"]
+    assert ticks
+    assert ticks[-1][0]["labels"] == ["energy", "tech", "health"]
+    np.testing.assert_allclose(
+        np.frombuffer(ticks[-1][1][0], dtype=np.float32),
+        np.array([0, 1, 2], dtype=np.float32),
+    )
+
+
+def test_specialty_primitives_and_export_html_payloads(tmp_path):
+    plot = ip.Plot(title="specialty")
+    sent = _capture_messages(plot)
+
+    x = np.arange(4, dtype=np.float32)
+    open_ = np.array([10.0, 11.0, 10.5, 12.0], dtype=np.float32)
+    high = open_ + 1.0
+    low = open_ - 1.0
+    close = open_ + np.array([0.5, -0.25, 0.75, -0.5], dtype=np.float32)
+    plot.candlestick("candles", x=x, open=open_, high=high, low=low, close=close)
+    content, buffers = sent[-1]
+    assert content["kind"] == "candlestick"
+    assert content["length"] == 4
+    assert len(buffers) == 3
+    assert np.frombuffer(buffers[2], dtype=np.float32).size == 12
+
+    plot.ohlc("ohlc", x=x, open=open_, high=high, low=low, close=close)
+    content, buffers = sent[-1]
+    assert content["kind"] == "ohlc"
+    assert len(buffers) == 3
+
+    plot.quiver("vectors", x, x, np.ones_like(x), -np.ones_like(x), scale=0.5, normalize=True)
+    content, buffers = sent[-1]
+    assert content["kind"] == "quiver"
+    assert content["scale"] == 0.5
+    assert content["normalize"] is True
+    assert np.frombuffer(buffers[2], dtype=np.float32).size == 8
+
+    z = np.arange(12, dtype=np.float32).reshape(3, 4)
+    plot.contour("contours", z, levels=[2.0, 5.0, 9.0], bounds=((0, -1), (3, 1)), line_weight=1.5)
+    content, buffers = sent[-1]
+    assert content["kind"] == "contour"
+    assert content["rows"] == 3
+    assert content["cols"] == 4
+    assert content["levels"] == 3
+    assert content["line_weight"] == 1.5
+    assert np.frombuffer(buffers[1], dtype=np.float32).tolist() == [2.0, 5.0, 9.0]
+
+    plot.waterfall("waterfall", z, x=x, y_offsets=np.array([0.0, 2.0, 4.0], dtype=np.float32), scale=0.25)
+    content, buffers = sent[-1]
+    assert content["kind"] == "waterfall"
+    assert content["has_x"] is True
+    assert content["scale"] == 0.25
+    assert len(buffers) == 3
+
+    plot.spectrogram("spectrogram", z, label_fmt="", show_colorbar=True, colorbar_format="%.2f")
+    content, buffers = sent[-1]
+    assert content["kind"] == "spectrogram"
+    assert content["label_fmt"] == ""
+    assert content["show_colorbar"] is True
+    assert content["colorbar_format"] == "%.2f"
+    assert len(buffers) == 1
+
+    html_path = tmp_path / "plot.html"
+    html_text = plot.export_html(html_path, runtime_url="/nbimplot/index.js")
+    assert html_path.read_text(encoding="utf-8") == html_text
+    assert "import { createPlot } from \"/nbimplot/index.js\"" in html_text
+    assert "\"primitives\"" in html_text
+    assert "spectrogram" in html_text
+
+
 def test_show_returns_none_to_prevent_double_display():
     plot = ip.Plot()
     with patch("nbimplot._plot.display") as mocked_display:

@@ -82,6 +82,14 @@ const examples = [
     code: 'const h = plot.streamLine("ticks", { capacity: 12000, x: initialX });\nh.append(chunk, { x: chunkX });\nh.pause(); h.resume();',
   },
   {
+    id: "batch-datetime-plot",
+    section: "Data Input",
+    title: "Batch Lines + Datetime + Categories + HTML Export",
+    text: "Multi-series upload, automatic time/category x normalization, C++ theme presets, and standalone HTML state export.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Batch + Axes")\np.set_theme("publication")\nhandles = p.lines({"mid": {"x": ts, "y": mid}, "vwap": {"x": ts, "y": vwap}})\np.scatter("scores", scores, x=["A", "B", "C"])\nhtml = p.export_html(title="snapshot")\np',
+    code: 'plot.setTheme("publication");\nconst handles = plot.lines({ mid: { x: dates, y: mid }, vwap: { x: dates, y: vwap } });\nplot.scatter("scores", scores, { x: ["A", "B", "C"] });\nconst html = plot.exportHTML({ title: "snapshot" });',
+  },
+  {
     id: "scatter-plot",
     section: "Points",
     title: "Scatter + Bubble Encodings",
@@ -160,6 +168,22 @@ const examples = [
     text: "Selector, slider, and color button widgets that update heatmaps and colorbar primitives at runtime.",
     pythonCode: 'p = ip.Plot(width=1000, height=420, title="Colormaps")\np.set_colormap("Plasma")\np.heatmap("z", matrix, label_fmt="", show_colorbar=True)\np.colormap_selector(label="Choose map")\np.colormap_slider(label="Sample")\np.colormap_button(label="Active")\np',
     code: 'plot.setColormap("Plasma");\nplot.colormapSelector({ label: "Choose map" });\nplot.colormapSlider({ label: "Sample" });',
+  },
+  {
+    id: "finance-plot",
+    section: "Specialty",
+    title: "Candlestick + OHLC",
+    text: "Financial primitives rendered in the ImPlot/WASM layer with hover inspection and autoscale support.",
+    pythonCode: 'p = ip.Plot(width=1100, height=420, title="Finance")\np.set_theme("finance")\np.candlestick("candles", x=x, open=open_, high=high, low=low, close=close)\np.ohlc("ohlc", x=x, open=open_, high=high, low=low, close=close)\np',
+    code: 'plot.setTheme("finance");\nplot.candlestick("candles", open, high, low, close, { x });\nplot.ohlc("ohlc", open, high, low, close, { x });',
+  },
+  {
+    id: "science-plot",
+    section: "Specialty",
+    title: "Contour + Quiver + Waterfall + Spectrogram",
+    text: "Scientific field and matrix workflows backed by WASM-side ImPlot primitives and draw-list integration.",
+    pythonCode: 'p = ip.Plot(width=1100, height=760, title="Scientific")\np.set_subplots_config(rows=2, cols=2)\np.contour("contour", z, levels=levels, subplot_index=0)\np.quiver("field", x, y, u, v, normalize=True, subplot_index=1)\np.waterfall("waterfall", z, subplot_index=2)\np.spectrogram("spectrogram", z, label_fmt="", show_colorbar=True, subplot_index=3)\np',
+    code: 'plot.setSubplots(2, 2);\nplot.contour("contour", z, { rows, cols, levels, subplotIndex: 0 });\nplot.quiver("field", x, y, u, v, { normalize: true, subplotIndex: 1 });\nplot.waterfall("waterfall", z, { rows, cols, subplotIndex: 2 });\nplot.spectrogram("spectrogram", z, { rows, cols, labelFmt: "", showColorbar: true, subplotIndex: 3 });',
   },
   {
     id: "advanced-api-plot",

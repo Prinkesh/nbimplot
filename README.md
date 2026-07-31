@@ -236,6 +236,79 @@ Rules:
 - `x_axis` / `xAxis` selects the ImPlot axis slot (`x1`, `x2`, `x3`); it is not the x-data argument.
 - Streaming supports explicit x chunks: `h.append(y_chunk, x=x_chunk)` / `h.append(yChunk, { x: xChunk })`.
 
+## Batch Lines, Datetime, And Categories
+
+Use `lines(...)` to upload several line series through one notebook widget
+message. This reduces Python-to-browser overhead when creating dashboards with
+many related signals:
+
+```python
+p = ip.Plot(width=1100, height=420, title="Batch Lines")
+handles = p.lines(
+    {
+        "mid": {"x": ts, "y": mid},
+        "vwap": {"x": ts, "y": vwap, "color": "#b74b2b"},
+    },
+    line_weight=1.5,
+)
+p.show()
+```
+
+```js
+const handles = plot.lines({
+  mid: { x: timestamps, y: mid },
+  vwap: { x: timestamps, y: vwap, color: "#b74b2b" },
+});
+```
+
+`numpy.datetime64`, pandas datetime columns, Python `datetime` values, and
+JavaScript `Date` values are normalized to ImPlot time axes automatically.
+Categorical x values are converted to integer tick locations with labels:
+
+```python
+p = ip.Plot(width=900, height=360, title="Datetime + Categories")
+p.line("sessions", df, x="timestamp", y="latency")
+p.scatter("rank", np.array([4, 7, 3], dtype=np.float32), x=["A", "B", "C"])
+p.show()
+```
+
+```js
+plot.line("sessions", latency, { x: dates });
+plot.scatter("rank", new Float32Array([4, 7, 3]), { x: ["A", "B", "C"] });
+```
+
+For high-frequency modern timestamps, prefer relative numeric seconds when
+sub-second precision matters because the hot rendering path stores `float32`.
+
+## Themes And Standalone HTML
+
+The C++/WASM layer owns the theme presets. Available presets are `nbimplot`,
+`notebook`, `publication`, `finance`, `lab`, and `dark-terminal`:
+
+```python
+p.set_theme("finance")
+p.set_colormap("Viridis")
+```
+
+```js
+plot.setTheme("publication");
+plot.setColormap("Plasma");
+```
+
+Notebook plots can export a standalone HTML file that reloads the same data
+through `@nbimplot/web` and the WASM/ImPlot core:
+
+```python
+p.export_html("signal.html")
+```
+
+```js
+const html = plot.exportHTML({ title: "Signal Export" });
+```
+
+The HTML export is for sharing a fixed plot state. It still requires browser
+WebGL2 and WASM asset loading; it is not a static SVG/PNG fallback.
+
 ## PNG Export
 
 Notebook widgets can request a browser-side PNG download of the current canvas:
@@ -402,7 +475,46 @@ sp.subplot(1, 1).histogram("hist", np.random.randn(20_000).astype(np.float32), b
 sp.show()
 ```
 
-### 5) Dashboard, State, Theme, and Linked Crosshair
+### 5) Specialty Scientific And Financial Plots
+
+```python
+import numpy as np
+import nbimplot as ip
+
+rng = np.random.default_rng(22)
+x = np.arange(120, dtype=np.float32)
+close = (100 + rng.normal(0, 1, x.size).cumsum()).astype(np.float32)
+open_ = np.r_[close[0], close[:-1]].astype(np.float32)
+high = (np.maximum(open_, close) + rng.random(x.size) * 1.8).astype(np.float32)
+low = (np.minimum(open_, close) - rng.random(x.size) * 1.8).astype(np.float32)
+
+p = ip.Plot(width=1100, height=420, title="Finance")
+p.set_theme("finance")
+p.candlestick("candles", x=x, open=open_, high=high, low=low, close=close)
+p.ohlc("ohlc", x=x, open=open_, high=high, low=low, close=close)
+p.show()
+```
+
+```python
+grid = np.linspace(-3, 3, 80, dtype=np.float32)
+xx, yy = np.meshgrid(grid, grid)
+z = np.sin(xx * yy).astype(np.float32)
+
+p = ip.Plot(width=1100, height=420, title="Scientific")
+p.set_colormap("Viridis")
+p.contour("contour", z, levels=np.linspace(-1, 1, 9, dtype=np.float32))
+p.quiver("field", xx[::8, ::8].ravel(), yy[::8, ::8].ravel(),
+         -yy[::8, ::8].ravel(), xx[::8, ::8].ravel(), scale=0.08, normalize=True)
+p.waterfall("waterfall", z[::4], scale=0.18)
+p.spectrogram("spectrogram", z, label_fmt="", show_colorbar=True)
+p.show()
+```
+
+These specialty methods use ImPlot/WASM draw paths. Candles, OHLC, quiver, and
+contour lines use ImPlot coordinate transforms and draw-list item integration;
+spectrograms reuse ImPlot heatmaps.
+
+### 6) Dashboard, State, Theme, and Linked Crosshair
 
 ```python
 t = np.linspace(0, 30, 4000, dtype=np.float32)
@@ -436,11 +548,13 @@ const json = plot.exportJSONState({ includeData: true });
 Implemented plot/primitive APIs include:
 
 - `line`, `stream_line`
+- `lines`
 - `scatter`, `bubbles`, `stairs`, `stems`, `digital`
 - `bars`, `bar_groups`, `bars_h`, `shaded`
 - `error_bars`, `error_bars_h`
 - `inf_lines`, `vlines`, `hlines`
 - `histogram`, `histogram2d`, `heatmap`, `image`, `pie_chart`
+- `candlestick`, `ohlc`, `quiver`, `contour`, `waterfall`, `spectrogram`
 - `text`, `annotation`, `dummy`
 - `tag_x`, `tag_y`, `colormap_slider`, `colormap_button`, `colormap_selector`
 - `drag_line_x`, `drag_line_y`, `drag_point`, `drag_rect`
@@ -480,6 +594,7 @@ Search-focused guides:
 - `p.export_csv_selection(selection, series=None)`
 - `p.get_state(include_data=False)` / `p.set_state(state)`
 - `p.export_json_state(include_data=False)`
+- `p.export_html("plot.html")`
 - `p.set_theme("nbimplot")`
 - `p.set_linked_crosshair("group", axis="x|y|xy")`
 - `p.export_png(filename="nbimplot.png")`
@@ -575,3 +690,4 @@ NBIMPLOT_WITH_IMPLOT=ON scripts/build_wasm.sh
 - raw path when visible points `<= 3 * pixel_width`
 - min/max LOD when visible points `> 3 * pixel_width`
 - LOD computed in WASM, complexity scales with screen pixels
+- large line series maintain a reusable multiresolution LOD pyramid so pan/zoom recomputes buckets from cached summaries instead of rescanning every raw point

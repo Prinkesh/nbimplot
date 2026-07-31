@@ -5,6 +5,7 @@
 #include <emscripten/html5.h>
 #include "imgui.h"
 #include "implot.h"
+#include "implot_internal.h"
 #include "backends/imgui_impl_opengl3.h"
 #endif
 
@@ -52,6 +53,7 @@ struct LayerState {
   };
   std::unordered_map<std::uint32_t, ImageTextureEntry> image_textures;
   std::unordered_set<std::uint32_t> image_textures_touched;
+  std::string theme_name = "nbimplot";
 };
 
 std::unordered_map<const ImPlotLayer *, LayerState> g_states;
@@ -168,6 +170,142 @@ void apply_nbimplot_theme() {
   plot_style.Colors[ImPlotCol_AxisBgActive] = ImVec4(0.294f, 0.824f, 0.753f, 0.180f);
   plot_style.Colors[ImPlotCol_Selection] = ImVec4(0.784f, 0.949f, 0.420f, 0.420f);
   plot_style.Colors[ImPlotCol_Crosshairs] = ImVec4(0.945f, 0.702f, 0.435f, 0.700f);
+}
+
+std::string lower_name(const char *name) {
+  std::string out;
+  if (name == nullptr) {
+    return out;
+  }
+  for (const char *p = name; *p != '\0'; ++p) {
+    out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(*p))));
+  }
+  return out;
+}
+
+void apply_light_plot_theme(const ImVec4 &accent, const ImVec4 &plot_bg,
+                            const ImVec4 &grid, const ImVec4 &text) {
+  ImGui::StyleColorsLight();
+  ImGuiStyle &style = ImGui::GetStyle();
+  style.WindowPadding = ImVec2(12.0f, 11.0f);
+  style.FramePadding = ImVec2(8.0f, 5.0f);
+  style.ItemSpacing = ImVec2(8.0f, 7.0f);
+  style.WindowRounding = 7.0f;
+  style.FrameRounding = 6.0f;
+  style.PopupRounding = 7.0f;
+  style.GrabRounding = 6.0f;
+  style.WindowBorderSize = 1.0f;
+  style.FrameBorderSize = 1.0f;
+
+  ImVec4 *colors = style.Colors;
+  colors[ImGuiCol_Text] = text;
+  colors[ImGuiCol_TextDisabled] = ImVec4(text.x, text.y, text.z, 0.48f);
+  colors[ImGuiCol_WindowBg] = ImVec4(0.985f, 0.980f, 0.960f, 0.985f);
+  colors[ImGuiCol_ChildBg] = ImVec4(0.980f, 0.976f, 0.950f, 0.980f);
+  colors[ImGuiCol_PopupBg] = ImVec4(1.000f, 0.996f, 0.980f, 0.990f);
+  colors[ImGuiCol_Border] = ImVec4(accent.x, accent.y, accent.z, 0.260f);
+  colors[ImGuiCol_FrameBg] = ImVec4(0.950f, 0.945f, 0.925f, 0.940f);
+  colors[ImGuiCol_FrameBgHovered] = ImVec4(accent.x, accent.y, accent.z, 0.130f);
+  colors[ImGuiCol_FrameBgActive] = ImVec4(accent.x, accent.y, accent.z, 0.220f);
+  colors[ImGuiCol_Button] = ImVec4(accent.x, accent.y, accent.z, 0.120f);
+  colors[ImGuiCol_ButtonHovered] = ImVec4(accent.x, accent.y, accent.z, 0.240f);
+  colors[ImGuiCol_ButtonActive] = ImVec4(accent.x, accent.y, accent.z, 0.340f);
+  colors[ImGuiCol_Header] = ImVec4(accent.x, accent.y, accent.z, 0.140f);
+  colors[ImGuiCol_HeaderHovered] = ImVec4(accent.x, accent.y, accent.z, 0.260f);
+  colors[ImGuiCol_HeaderActive] = ImVec4(accent.x, accent.y, accent.z, 0.340f);
+  colors[ImGuiCol_SliderGrab] = ImVec4(accent.x, accent.y, accent.z, 0.780f);
+  colors[ImGuiCol_SliderGrabActive] = accent;
+
+  ImPlotStyle &plot_style = ImPlot::GetStyle();
+  plot_style.PlotBorderSize = 1.0f;
+  plot_style.MinorAlpha = 0.28f;
+  plot_style.MajorGridSize = ImVec2(1.0f, 1.0f);
+  plot_style.MinorGridSize = ImVec2(1.0f, 1.0f);
+  plot_style.PlotPadding = ImVec2(11.0f, 11.0f);
+  plot_style.LabelPadding = ImVec2(7.0f, 7.0f);
+  plot_style.LegendPadding = ImVec2(10.0f, 10.0f);
+  plot_style.LegendInnerPadding = ImVec2(7.0f, 6.0f);
+  plot_style.MousePosPadding = ImVec2(10.0f, 9.0f);
+  plot_style.FitPadding = ImVec2(0.04f, 0.07f);
+  plot_style.Colors[ImPlotCol_FrameBg] = ImVec4(0.985f, 0.980f, 0.960f, 1.0f);
+  plot_style.Colors[ImPlotCol_PlotBg] = plot_bg;
+  plot_style.Colors[ImPlotCol_PlotBorder] = ImVec4(accent.x, accent.y, accent.z, 0.240f);
+  plot_style.Colors[ImPlotCol_LegendBg] = ImVec4(1.000f, 0.996f, 0.980f, 0.920f);
+  plot_style.Colors[ImPlotCol_LegendBorder] = ImVec4(accent.x, accent.y, accent.z, 0.240f);
+  plot_style.Colors[ImPlotCol_LegendText] = text;
+  plot_style.Colors[ImPlotCol_TitleText] = text;
+  plot_style.Colors[ImPlotCol_InlayText] = ImVec4(text.x, text.y, text.z, 0.760f);
+  plot_style.Colors[ImPlotCol_AxisText] = ImVec4(text.x, text.y, text.z, 0.760f);
+  plot_style.Colors[ImPlotCol_AxisGrid] = grid;
+  plot_style.Colors[ImPlotCol_AxisTick] = ImVec4(text.x, text.y, text.z, 0.320f);
+  plot_style.Colors[ImPlotCol_AxisBgHovered] = ImVec4(accent.x, accent.y, accent.z, 0.080f);
+  plot_style.Colors[ImPlotCol_AxisBgActive] = ImVec4(accent.x, accent.y, accent.z, 0.140f);
+  plot_style.Colors[ImPlotCol_Selection] = ImVec4(accent.x, accent.y, accent.z, 0.300f);
+  plot_style.Colors[ImPlotCol_Crosshairs] = ImVec4(accent.x, accent.y, accent.z, 0.700f);
+}
+
+void apply_named_theme(const char *name) {
+  const std::string key = lower_name(name);
+  if (key == "notebook" || key == "light") {
+    apply_light_plot_theme(ImVec4(0.035f, 0.373f, 0.737f, 1.0f),
+                           ImVec4(0.996f, 0.992f, 0.972f, 1.0f),
+                           ImVec4(0.118f, 0.161f, 0.216f, 0.120f),
+                           ImVec4(0.075f, 0.092f, 0.122f, 1.0f));
+    return;
+  }
+  if (key == "publication" || key == "paper") {
+    apply_light_plot_theme(ImVec4(0.090f, 0.090f, 0.090f, 1.0f),
+                           ImVec4(1.000f, 1.000f, 0.992f, 1.0f),
+                           ImVec4(0.000f, 0.000f, 0.000f, 0.100f),
+                           ImVec4(0.055f, 0.055f, 0.055f, 1.0f));
+    return;
+  }
+  apply_nbimplot_theme();
+  if (key == "finance") {
+    ImPlot::GetStyle().Colormap = ImPlotColormap_Deep;
+    ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] =
+        ImVec4(0.030f, 0.045f, 0.038f, 1.0f);
+    ImPlot::GetStyle().Colors[ImPlotCol_AxisGrid] =
+        ImVec4(0.500f, 0.720f, 0.600f, 0.110f);
+    return;
+  }
+  if (key == "lab") {
+    ImPlot::GetStyle().Colormap = ImPlotColormap_Viridis;
+    ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] =
+        ImVec4(0.030f, 0.050f, 0.075f, 1.0f);
+    ImGui::GetStyle().Colors[ImGuiCol_WindowBg] =
+        ImVec4(0.025f, 0.042f, 0.066f, 0.985f);
+    return;
+  }
+  if (key == "dark-terminal" || key == "terminal") {
+    ImPlot::GetStyle().Colormap = ImPlotColormap_Viridis;
+    ImPlot::GetStyle().Colors[ImPlotCol_PlotBg] =
+        ImVec4(0.000f, 0.010f, 0.006f, 1.0f);
+    ImPlot::GetStyle().Colors[ImPlotCol_AxisGrid] =
+        ImVec4(0.210f, 0.900f, 0.450f, 0.120f);
+    ImPlot::GetStyle().Colors[ImPlotCol_AxisText] =
+        ImVec4(0.650f, 1.000f, 0.760f, 1.0f);
+    ImGui::GetStyle().Colors[ImGuiCol_Text] =
+        ImVec4(0.650f, 1.000f, 0.760f, 1.0f);
+  }
+}
+
+ImVec4 clear_color_for_theme(const std::string &name) {
+  const std::string key = lower_name(name.c_str());
+  if (key == "notebook" || key == "light" || key == "publication" ||
+      key == "paper") {
+    return ImVec4(0.985f, 0.980f, 0.960f, 1.0f);
+  }
+  if (key == "dark-terminal" || key == "terminal") {
+    return ImVec4(0.000f, 0.010f, 0.006f, 1.0f);
+  }
+  if (key == "lab") {
+    return ImVec4(0.025f, 0.042f, 0.066f, 1.0f);
+  }
+  if (key == "finance") {
+    return ImVec4(0.030f, 0.045f, 0.038f, 1.0f);
+  }
+  return ImVec4(0.027f, 0.043f, 0.051f, 1.0f);
 }
 
 std::vector<std::string> split_labels(const char *text, char delim) {
@@ -477,6 +615,12 @@ constexpr std::int32_t kPrimColormapSelector = 29;
 constexpr std::int32_t kPrimDragDropPlot = 30;
 constexpr std::int32_t kPrimDragDropAxis = 31;
 constexpr std::int32_t kPrimDragDropLegend = 32;
+constexpr std::int32_t kPrimCandlestick = 33;
+constexpr std::int32_t kPrimOHLC = 34;
+constexpr std::int32_t kPrimQuiver = 35;
+constexpr std::int32_t kPrimContour = 36;
+constexpr std::int32_t kPrimWaterfall = 37;
+constexpr std::int32_t kPrimSpectrogram = 38;
 
 const char *primitive_kind_name(std::int32_t kind) {
   switch (kind) {
@@ -544,8 +688,397 @@ const char *primitive_kind_name(std::int32_t kind) {
     return "drag_drop_axis";
   case kPrimDragDropLegend:
     return "drag_drop_legend";
+  case kPrimCandlestick:
+    return "candlestick";
+  case kPrimOHLC:
+    return "ohlc";
+  case kPrimQuiver:
+    return "quiver";
+  case kPrimContour:
+    return "contour";
+  case kPrimWaterfall:
+    return "waterfall";
+  case kPrimSpectrogram:
+    return "spectrogram";
   default:
     return "primitive";
+  }
+}
+
+double inferred_half_width(const float *xs, std::uint32_t count, double fraction) {
+  if (xs == nullptr || count < 2U || !std::isfinite(fraction) || fraction <= 0.0) {
+    return std::max(1e-6, 0.5 * std::max(1e-6, fraction));
+  }
+  double sum = 0.0;
+  std::uint32_t used = 0U;
+  const std::uint32_t cap = std::min<std::uint32_t>(count, 256U);
+  for (std::uint32_t i = 1U; i < cap; ++i) {
+    const double a = static_cast<double>(xs[i - 1U]);
+    const double b = static_cast<double>(xs[i]);
+    const double step = std::fabs(b - a);
+    if (std::isfinite(step) && step > 0.0) {
+      sum += step;
+      used += 1U;
+    }
+  }
+  const double base = used > 0U ? sum / static_cast<double>(used) : 1.0;
+  return std::max(1e-6, 0.5 * base * fraction);
+}
+
+void draw_ohlc_like(const PrimitiveView &p, const char *label, bool candles) {
+  if (p.data0 == nullptr || p.data1 == nullptr || p.data2 == nullptr) {
+    return;
+  }
+  const int count =
+      static_cast<int>(std::min(p.len0, std::min(p.len1, p.len2 / 3U)));
+  if (count <= 0) {
+    return;
+  }
+  const double half_width =
+      inferred_half_width(p.data0, static_cast<std::uint32_t>(count),
+                          p.f1 > 0.0f ? static_cast<double>(p.f1) : 0.6);
+  const ImVec4 bull_col(0.169f, 0.722f, 0.435f, 1.0f);
+  const ImVec4 bear_col(0.910f, 0.263f, 0.282f, 1.0f);
+  ImPlotSpec spec;
+  spec.LineColor = ImVec4(0.540f, 0.580f, 0.620f, 1.0f);
+  if (!ImPlot::BeginItem(label, spec, spec.LineColor)) {
+    return;
+  }
+  if (ImPlot::FitThisFrame()) {
+    for (int i = 0; i < count; ++i) {
+      const double x = static_cast<double>(p.data0[i]);
+      const double high = static_cast<double>(p.data2[static_cast<std::size_t>(i) * 3U + 0U]);
+      const double low = static_cast<double>(p.data2[static_cast<std::size_t>(i) * 3U + 1U]);
+      if (std::isfinite(x) && std::isfinite(low) && std::isfinite(high)) {
+        ImPlot::FitPoint(ImPlotPoint(x - half_width, low));
+        ImPlot::FitPoint(ImPlotPoint(x + half_width, high));
+      }
+    }
+  }
+
+  ImDrawList *draw_list = ImPlot::GetPlotDrawList();
+  if (draw_list != nullptr) {
+    ImPlot::PushPlotClipRect(1.0f);
+    for (int i = 0; i < count; ++i) {
+      const std::size_t pack = static_cast<std::size_t>(i) * 3U;
+      const double x = static_cast<double>(p.data0[i]);
+      const double open = static_cast<double>(p.data1[i]);
+      const double high = static_cast<double>(p.data2[pack + 0U]);
+      const double low = static_cast<double>(p.data2[pack + 1U]);
+      const double close = static_cast<double>(p.data2[pack + 2U]);
+      if (!std::isfinite(x) || !std::isfinite(open) || !std::isfinite(high) ||
+          !std::isfinite(low) || !std::isfinite(close)) {
+        continue;
+      }
+      const bool rising = close >= open;
+      const ImU32 color =
+          ImGui::ColorConvertFloat4ToU32(rising ? bull_col : bear_col);
+      const ImU32 outline = with_alpha(color, 230);
+      const ImVec2 low_px = ImPlot::PlotToPixels(x, low);
+      const ImVec2 high_px = ImPlot::PlotToPixels(x, high);
+      if (!is_finite_vec2(low_px) || !is_finite_vec2(high_px)) {
+        continue;
+      }
+      draw_list->AddLine(low_px, high_px, outline, 1.25f);
+      const ImVec2 left_open = ImPlot::PlotToPixels(x - half_width, open);
+      const ImVec2 right_close = ImPlot::PlotToPixels(x + half_width, close);
+      if (!is_finite_vec2(left_open) || !is_finite_vec2(right_close)) {
+        continue;
+      }
+      if (candles) {
+        const ImVec2 bmin(std::min(left_open.x, right_close.x),
+                          std::min(left_open.y, right_close.y));
+        const ImVec2 bmax(std::max(left_open.x, right_close.x),
+                          std::max(left_open.y, right_close.y));
+        if (std::fabs(bmax.y - bmin.y) < 1.0f) {
+          draw_list->AddLine(ImVec2(bmin.x, bmin.y), ImVec2(bmax.x, bmin.y),
+                             outline, 2.0f);
+        } else {
+          draw_list->AddRectFilled(bmin, bmax, with_alpha(color, 190), 1.5f);
+          draw_list->AddRect(bmin, bmax, outline, 1.5f, 0, 1.0f);
+        }
+      } else {
+        const ImVec2 center = ImPlot::PlotToPixels(x, close);
+        const ImVec2 open_tick = ImPlot::PlotToPixels(x - half_width, open);
+        const ImVec2 close_tick = ImPlot::PlotToPixels(x + half_width, close);
+        const ImVec2 open_mid = ImPlot::PlotToPixels(x, open);
+        if (is_finite_vec2(open_tick) && is_finite_vec2(open_mid)) {
+          draw_list->AddLine(open_tick, open_mid, outline, 1.6f);
+        }
+        if (is_finite_vec2(close_tick) && is_finite_vec2(center)) {
+          draw_list->AddLine(center, close_tick, outline, 1.6f);
+        }
+      }
+    }
+    ImPlot::PopPlotClipRect();
+  }
+  ImPlot::EndItem();
+}
+
+void draw_quiver(const PrimitiveView &p, const char *label) {
+  if (p.data0 == nullptr || p.data1 == nullptr || p.data2 == nullptr) {
+    return;
+  }
+  const int count =
+      static_cast<int>(std::min(p.len0, std::min(p.len1, p.len2 / 2U)));
+  if (count <= 0) {
+    return;
+  }
+  const float scale = std::isfinite(p.f1) ? p.f1 : 1.0f;
+  const bool normalize = p.i1 != 0;
+  const ImVec4 item_col = color_for_slot(static_cast<std::int32_t>(p.id));
+  ImPlotSpec spec;
+  spec.LineColor = item_col;
+  if (!ImPlot::BeginItem(label, spec, item_col)) {
+    return;
+  }
+  if (ImPlot::FitThisFrame()) {
+    for (int i = 0; i < count; ++i) {
+      const double x = static_cast<double>(p.data0[i]);
+      const double y = static_cast<double>(p.data1[i]);
+      double u = static_cast<double>(p.data2[static_cast<std::size_t>(i) * 2U]);
+      double v =
+          static_cast<double>(p.data2[static_cast<std::size_t>(i) * 2U + 1U]);
+      if (normalize) {
+        const double mag = std::sqrt(u * u + v * v);
+        if (std::isfinite(mag) && mag > 1e-12) {
+          u /= mag;
+          v /= mag;
+        }
+      }
+      if (std::isfinite(x) && std::isfinite(y) && std::isfinite(u) &&
+          std::isfinite(v)) {
+        ImPlot::FitPoint(ImPlotPoint(x, y));
+        ImPlot::FitPoint(ImPlotPoint(x + u * scale, y + v * scale));
+      }
+    }
+  }
+  ImDrawList *draw_list = ImPlot::GetPlotDrawList();
+  if (draw_list != nullptr) {
+    const ImU32 color = ImGui::ColorConvertFloat4ToU32(item_col);
+    ImPlot::PushPlotClipRect(5.0f);
+    for (int i = 0; i < count; ++i) {
+      const double x = static_cast<double>(p.data0[i]);
+      const double y = static_cast<double>(p.data1[i]);
+      double u = static_cast<double>(p.data2[static_cast<std::size_t>(i) * 2U]);
+      double v =
+          static_cast<double>(p.data2[static_cast<std::size_t>(i) * 2U + 1U]);
+      if (normalize) {
+        const double mag = std::sqrt(u * u + v * v);
+        if (std::isfinite(mag) && mag > 1e-12) {
+          u /= mag;
+          v /= mag;
+        }
+      }
+      if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(u) ||
+          !std::isfinite(v)) {
+        continue;
+      }
+      const ImVec2 a = ImPlot::PlotToPixels(x, y);
+      const ImVec2 b = ImPlot::PlotToPixels(x + u * scale, y + v * scale);
+      if (!is_finite_vec2(a) || !is_finite_vec2(b)) {
+        continue;
+      }
+      draw_list->AddLine(a, b, color, 1.4f);
+      const float dx = b.x - a.x;
+      const float dy = b.y - a.y;
+      const float len = std::sqrt(dx * dx + dy * dy);
+      if (len > 2.0f) {
+        const float ux = dx / len;
+        const float uy = dy / len;
+        const float head = 7.0f;
+        const float wing = 4.0f;
+        const ImVec2 p1(b.x - ux * head - uy * wing, b.y - uy * head + ux * wing);
+        const ImVec2 p2(b.x - ux * head + uy * wing, b.y - uy * head - ux * wing);
+        draw_list->AddTriangleFilled(b, p1, p2, color);
+      }
+    }
+    ImPlot::PopPlotClipRect();
+  }
+  ImPlot::EndItem();
+}
+
+void draw_contour(const PrimitiveView &p, const char *label) {
+  const int rows = p.i1;
+  const int cols = p.i2;
+  if (p.data0 == nullptr || rows < 2 || cols < 2 ||
+      p.len0 < static_cast<std::uint32_t>(rows * cols)) {
+    return;
+  }
+  const double x0 = std::isfinite(p.f0) ? static_cast<double>(p.f0) : 0.0;
+  const double x1 = std::isfinite(p.f1) ? static_cast<double>(p.f1) : cols - 1.0;
+  const double y0 = std::isfinite(p.f2) ? static_cast<double>(p.f2) : 0.0;
+  const double y1 = std::isfinite(p.f3) ? static_cast<double>(p.f3) : rows - 1.0;
+  const int level_count =
+      p.data1 != nullptr && p.len1 > 0U
+          ? static_cast<int>(std::min<std::uint32_t>(p.len1, 128U))
+          : std::clamp(p.i6, 1, 128);
+  if (level_count <= 0) {
+    return;
+  }
+
+  std::vector<float> levels;
+  levels.reserve(static_cast<std::size_t>(level_count));
+  if (p.data1 != nullptr && p.len1 > 0U) {
+    for (int i = 0; i < level_count; ++i) {
+      if (std::isfinite(p.data1[i])) {
+        levels.push_back(p.data1[i]);
+      }
+    }
+  } else {
+    double z_min = 0.0;
+    double z_max = 0.0;
+    if (!compute_value_range(p.data0, p.len0, z_min, z_max) || z_min == z_max) {
+      return;
+    }
+    for (int i = 1; i <= level_count; ++i) {
+      levels.push_back(static_cast<float>(
+          z_min + (z_max - z_min) * static_cast<double>(i) /
+                      static_cast<double>(level_count + 1)));
+    }
+  }
+  if (levels.empty()) {
+    return;
+  }
+
+  const ImVec4 item_col = color_for_slot(static_cast<std::int32_t>(p.id));
+  ImPlotSpec spec;
+  spec.LineColor = item_col;
+  if (!ImPlot::BeginItem(label, spec, item_col)) {
+    return;
+  }
+  if (ImPlot::FitThisFrame()) {
+    ImPlot::FitPoint(ImPlotPoint(x0, y0));
+    ImPlot::FitPoint(ImPlotPoint(x1, y1));
+  }
+  ImDrawList *draw_list = ImPlot::GetPlotDrawList();
+  if (draw_list != nullptr) {
+    const double dx = (x1 - x0) / static_cast<double>(cols - 1);
+    const double dy = (y1 - y0) / static_cast<double>(rows - 1);
+    const float weight = std::isfinite(p.f4) && p.f4 > 0.0f ? p.f4 : 1.0f;
+    auto z_at = [&](int r, int c) -> double {
+      return static_cast<double>(
+          p.data0[static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) +
+                  static_cast<std::size_t>(c)]);
+    };
+    auto add_crossing = [&](std::vector<ImPlotPoint> &pts, double level,
+                            double ax, double ay, double av, double bx,
+                            double by, double bv) {
+      if (!std::isfinite(av) || !std::isfinite(bv) || av == bv) {
+        return;
+      }
+      if (!((av <= level && bv >= level) || (bv <= level && av >= level))) {
+        return;
+      }
+      const double t = std::clamp((level - av) / (bv - av), 0.0, 1.0);
+      pts.emplace_back(ax + (bx - ax) * t, ay + (by - ay) * t);
+    };
+    ImPlot::PushPlotClipRect(1.0f);
+    for (std::size_t li = 0; li < levels.size(); ++li) {
+      const double level = static_cast<double>(levels[li]);
+      const ImVec4 col4 =
+          ImPlot::SampleColormap(levels.size() <= 1U
+                                     ? 0.5f
+                                     : static_cast<float>(li) /
+                                           static_cast<float>(levels.size() - 1U));
+      const ImU32 color = ImGui::ColorConvertFloat4ToU32(col4);
+      for (int r = 0; r < rows - 1; ++r) {
+        for (int c = 0; c < cols - 1; ++c) {
+          const double cx0 = x0 + static_cast<double>(c) * dx;
+          const double cx1 = x0 + static_cast<double>(c + 1) * dx;
+          const double cy0 = y0 + static_cast<double>(r) * dy;
+          const double cy1 = y0 + static_cast<double>(r + 1) * dy;
+          const double z00 = z_at(r, c);
+          const double z10 = z_at(r, c + 1);
+          const double z11 = z_at(r + 1, c + 1);
+          const double z01 = z_at(r + 1, c);
+          std::vector<ImPlotPoint> pts;
+          pts.reserve(4);
+          add_crossing(pts, level, cx0, cy0, z00, cx1, cy0, z10);
+          add_crossing(pts, level, cx1, cy0, z10, cx1, cy1, z11);
+          add_crossing(pts, level, cx1, cy1, z11, cx0, cy1, z01);
+          add_crossing(pts, level, cx0, cy1, z01, cx0, cy0, z00);
+          if (pts.size() >= 2U) {
+            const ImVec2 a = ImPlot::PlotToPixels(pts[0]);
+            const ImVec2 b = ImPlot::PlotToPixels(pts[1]);
+            if (is_finite_vec2(a) && is_finite_vec2(b)) {
+              draw_list->AddLine(a, b, color, weight);
+            }
+          }
+          if (pts.size() >= 4U) {
+            const ImVec2 a = ImPlot::PlotToPixels(pts[2]);
+            const ImVec2 b = ImPlot::PlotToPixels(pts[3]);
+            if (is_finite_vec2(a) && is_finite_vec2(b)) {
+              draw_list->AddLine(a, b, color, weight);
+            }
+          }
+        }
+      }
+    }
+    ImPlot::PopPlotClipRect();
+  }
+  ImPlot::EndItem();
+}
+
+void draw_spectrogram(const PrimitiveView &p, const char *label) {
+  if (p.data0 == nullptr || p.i1 <= 0 || p.i2 <= 0) {
+    return;
+  }
+  std::string label_fmt = "";
+  std::string colorbar_label;
+  std::string colorbar_fmt = "%g";
+  if (p.text != nullptr) {
+    const std::vector<std::string> parts = split_labels(p.text, '\x1d');
+    if (!parts.empty()) {
+      label_fmt = parts[0];
+    }
+    if (parts.size() > 1U) {
+      colorbar_label = parts[1];
+    }
+    if (parts.size() > 2U && !parts[2].empty()) {
+      colorbar_fmt = parts[2];
+    }
+  }
+  const bool has_manual_scale =
+      std::isfinite(static_cast<double>(p.f0)) &&
+      std::isfinite(static_cast<double>(p.f1)) && p.f0 != p.f1;
+  const double scale_min = has_manual_scale ? static_cast<double>(p.f0) : 0.0;
+  const double scale_max = has_manual_scale ? static_cast<double>(p.f1) : 0.0;
+  const double x_min = std::isfinite(static_cast<double>(p.f2)) ? p.f2 : 0.0;
+  const double x_max =
+      std::isfinite(static_cast<double>(p.f3)) ? p.f3 : static_cast<double>(p.i2);
+  const double y_min = std::isfinite(static_cast<double>(p.f4)) ? p.f4 : 0.0;
+  const double y_max =
+      std::isfinite(static_cast<double>(p.f5)) ? p.f5 : static_cast<double>(p.i1);
+  const char *fmt = label_fmt.empty() ? nullptr : label_fmt.c_str();
+  ImPlotSpec hm_spec;
+  hm_spec.Flags = std::max(0, p.i3);
+  ImPlot::PlotHeatmap(label, p.data0, p.i1, p.i2, scale_min, scale_max, fmt,
+                      ImPlotPoint(x_min, y_min), ImPlotPoint(x_max, y_max),
+                      hm_spec);
+  if (p.i0 != 0) {
+    double cbar_min = scale_min;
+    double cbar_max = scale_max;
+    if (!has_manual_scale || !std::isfinite(cbar_min) || !std::isfinite(cbar_max) ||
+        cbar_min == cbar_max) {
+      if (!compute_value_range(p.data0, p.len0, cbar_min, cbar_max)) {
+        cbar_min = 0.0;
+        cbar_max = 1.0;
+      }
+    }
+    if (cbar_min == cbar_max) {
+      const double pad = std::max(1e-6, std::fabs(cbar_min) * 1e-3);
+      cbar_min -= pad;
+      cbar_max += pad;
+    }
+    const std::string scale_label =
+        colorbar_label.empty()
+            ? ("##cbar_spec_" + std::to_string(p.id))
+            : (colorbar_label + "###cbar_spec_" + std::to_string(p.id));
+    ImPlot::ColormapScale(
+        scale_label.c_str(), cbar_min, cbar_max, ImVec2(48.0f, 0.0f),
+        colorbar_fmt.empty() ? "%g" : colorbar_fmt.c_str(),
+        static_cast<ImPlotColormapScaleFlags>(std::max(0, p.i6)));
   }
 }
 
@@ -762,8 +1295,9 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
                          std::int32_t aligned_group_enabled,
                          const char *aligned_group_id,
                          std::int32_t aligned_group_vertical,
-                         const char *colormap_name, PrimitiveView *primitives,
-                         float *selection_out6, float *hover_out8,
+                         const char *theme_name, const char *colormap_name,
+                         PrimitiveView *primitives, float *selection_out6,
+                         float *hover_out8,
                          float *click_out8,
                          std::uint32_t primitive_count) noexcept {
 #if NBIMPLOT_WITH_IMPLOT
@@ -810,6 +1344,13 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
   }
 
   set_contexts(*state);
+  const std::string requested_theme =
+      (theme_name != nullptr && theme_name[0] != '\0') ? std::string(theme_name)
+                                                       : std::string("nbimplot");
+  if (requested_theme != state->theme_name) {
+    apply_named_theme(requested_theme.c_str());
+    state->theme_name = requested_theme;
+  }
   ImGuiIO &io = ImGui::GetIO();
   io.DisplaySize = ImVec2(static_cast<float>(state->width),
                           static_cast<float>(state->height));
@@ -1439,6 +1980,67 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
                 ImVec2(uv1_x, uv1_y), tint, img_spec);
           }
         }
+        break;
+      }
+      case kPrimCandlestick: {
+        draw_ohlc_like(p, label, true);
+        break;
+      }
+      case kPrimOHLC: {
+        draw_ohlc_like(p, label, false);
+        break;
+      }
+      case kPrimQuiver: {
+        draw_quiver(p, label);
+        break;
+      }
+      case kPrimContour: {
+        draw_contour(p, label);
+        break;
+      }
+      case kPrimWaterfall: {
+        if (p.data0 != nullptr && p.i1 > 0 && p.i2 > 0) {
+          const int rows = p.i1;
+          const int cols = p.i2;
+          const std::size_t expected =
+              static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+          if (p.len0 >= expected) {
+            const float scale = std::isfinite(p.f1) ? p.f1 : 1.0f;
+            tmp_x.resize(static_cast<std::size_t>(cols));
+            tmp_y.resize(static_cast<std::size_t>(cols));
+            for (int r = 0; r < rows; ++r) {
+              const float offset =
+                  p.data2 != nullptr && p.len2 == static_cast<std::uint32_t>(rows)
+                      ? p.data2[static_cast<std::size_t>(r)]
+                      : static_cast<float>(r);
+              for (int c = 0; c < cols; ++c) {
+                const std::size_t idx =
+                    static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) +
+                    static_cast<std::size_t>(c);
+                tmp_x[static_cast<std::size_t>(c)] =
+                    p.i0 != 0 && p.data1 != nullptr &&
+                            p.len1 == static_cast<std::uint32_t>(cols)
+                        ? p.data1[static_cast<std::size_t>(c)]
+                        : static_cast<float>(c);
+                tmp_y[static_cast<std::size_t>(c)] = offset + p.data0[idx] * scale;
+              }
+              std::string row_label =
+                  r == 0 ? std::string(label)
+                         : ("##wf_" + std::to_string(p.id) + "_" + std::to_string(r));
+              ImPlotSpec row_spec;
+              row_spec.LineColor =
+                  ImPlot::SampleColormap(rows <= 1 ? 0.5f
+                                                    : static_cast<float>(r) /
+                                                          static_cast<float>(rows - 1));
+              ImPlot::PlotLine(row_label.c_str(), tmp_x.data(), tmp_y.data(), cols,
+                               row_spec);
+            }
+          }
+        }
+        break;
+      }
+      case kPrimSpectrogram: {
+        draw_spectrogram(p, label);
         break;
       }
       case kPrimPieChart: {
@@ -2507,6 +3109,217 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
         consider_rect_highlight(cx0, cy0, cx1, cy1, x_axis, y_axis, prim_color);
         break;
       }
+      case kPrimCandlestick:
+      case kPrimOHLC: {
+        if (p.data0 == nullptr || p.data1 == nullptr || p.data2 == nullptr) {
+          break;
+        }
+        const std::uint32_t n = std::min(p.len0, std::min(p.len1, p.len2 / 3U));
+        if (n == 0U) {
+          break;
+        }
+        double best_dist = std::numeric_limits<double>::infinity();
+        std::uint32_t best = 0U;
+        bool found = false;
+        for (std::uint32_t i = 0; i < n; ++i) {
+          const double x = static_cast<double>(p.data0[i]);
+          if (!std::isfinite(x)) {
+            continue;
+          }
+          const double dist = std::fabs(x - mouse.x);
+          if (dist < best_dist) {
+            best_dist = dist;
+            best = i;
+            found = true;
+          }
+        }
+        if (found) {
+          const std::size_t pack = static_cast<std::size_t>(best) * 3U;
+          const double x = static_cast<double>(p.data0[best]);
+          const double open = static_cast<double>(p.data1[best]);
+          const double high = static_cast<double>(p.data2[pack + 0U]);
+          const double low = static_cast<double>(p.data2[pack + 1U]);
+          const double close = static_cast<double>(p.data2[pack + 2U]);
+          lines.push_back(format_text(
+              "%s: x=%.6g open=%.6g high=%.6g low=%.6g close=%.6g",
+              prefix.c_str(), x, open, high, low, close));
+          const double half_width =
+              inferred_half_width(p.data0, n, p.f1 > 0.0f ? p.f1 : 0.6f);
+          consider_rect_highlight(x - half_width, low, x + half_width, high,
+                                  x_axis, y_axis, prim_color);
+        }
+        break;
+      }
+      case kPrimQuiver: {
+        if (p.data0 == nullptr || p.data1 == nullptr || p.data2 == nullptr) {
+          break;
+        }
+        const std::uint32_t n = std::min(p.len0, std::min(p.len1, p.len2 / 2U));
+        if (n == 0U) {
+          break;
+        }
+        double best_dist = std::numeric_limits<double>::infinity();
+        std::uint32_t best = 0U;
+        bool found = false;
+        for (std::uint32_t i = 0; i < n; ++i) {
+          const double x = static_cast<double>(p.data0[i]);
+          const double y = static_cast<double>(p.data1[i]);
+          if (!std::isfinite(x) || !std::isfinite(y)) {
+            continue;
+          }
+          const ImVec2 px = ImPlot::PlotToPixels(
+              x, y, static_cast<ImAxis>(x_axis), static_cast<ImAxis>(y_axis));
+          if (!is_finite_vec2(px)) {
+            continue;
+          }
+          const double dist = distance2(px, mouse_px);
+          if (dist < best_dist) {
+            best_dist = dist;
+            best = i;
+            found = true;
+          }
+        }
+        if (found) {
+          const double x = static_cast<double>(p.data0[best]);
+          const double y = static_cast<double>(p.data1[best]);
+          const double u = static_cast<double>(p.data2[static_cast<std::size_t>(best) * 2U]);
+          const double v =
+              static_cast<double>(p.data2[static_cast<std::size_t>(best) * 2U + 1U]);
+          lines.push_back(format_text("%s: x=%.6g y=%.6g u=%.6g v=%.6g",
+                                      prefix.c_str(), x, y, u, v));
+          consider_point_highlight(x, y, x_axis, y_axis, prim_color, 5.0f);
+        }
+        break;
+      }
+      case kPrimContour: {
+        if (p.data0 == nullptr || p.i1 <= 0 || p.i2 <= 0) {
+          break;
+        }
+        const int rows = p.i1;
+        const int cols = p.i2;
+        const double x0 = std::isfinite(static_cast<double>(p.f0)) ? p.f0 : 0.0;
+        const double x1 =
+            std::isfinite(static_cast<double>(p.f1)) ? p.f1 : static_cast<double>(cols - 1);
+        const double y0 = std::isfinite(static_cast<double>(p.f2)) ? p.f2 : 0.0;
+        const double y1 =
+            std::isfinite(static_cast<double>(p.f3)) ? p.f3 : static_cast<double>(rows - 1);
+        if (mouse.x < std::min(x0, x1) || mouse.x > std::max(x0, x1) ||
+            mouse.y < std::min(y0, y1) || mouse.y > std::max(y0, y1)) {
+          break;
+        }
+        const double ux = (mouse.x - x0) / std::max(1e-12, std::fabs(x1 - x0));
+        const double uy = (mouse.y - y0) / std::max(1e-12, std::fabs(y1 - y0));
+        const int col =
+            std::clamp(static_cast<int>(std::llround(ux * (cols - 1))), 0, cols - 1);
+        const int row =
+            std::clamp(static_cast<int>(std::llround(uy * (rows - 1))), 0, rows - 1);
+        const std::size_t idx =
+            static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) +
+            static_cast<std::size_t>(col);
+        if (idx < p.len0) {
+          const double z = static_cast<double>(p.data0[idx]);
+          const double px = x0 + (x1 - x0) * (static_cast<double>(col) /
+                                             std::max(1, cols - 1));
+          const double py = y0 + (y1 - y0) * (static_cast<double>(row) /
+                                             std::max(1, rows - 1));
+          lines.push_back(format_text("%s: row=%d col=%d z=%.6g",
+                                      prefix.c_str(), row, col, z));
+          consider_point_highlight(px, py, x_axis, y_axis, prim_color, 4.5f);
+        }
+        break;
+      }
+      case kPrimWaterfall: {
+        if (p.data0 == nullptr || p.i1 <= 0 || p.i2 <= 0) {
+          break;
+        }
+        const int rows = p.i1;
+        const int cols = p.i2;
+        const std::size_t expected =
+            static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+        if (p.len0 < expected) {
+          break;
+        }
+        int col = 0;
+        double best_x_dist = std::numeric_limits<double>::infinity();
+        for (int c = 0; c < cols; ++c) {
+          const double x = p.i0 != 0 && p.data1 != nullptr &&
+                                   p.len1 == static_cast<std::uint32_t>(cols)
+                               ? static_cast<double>(p.data1[c])
+                               : static_cast<double>(c);
+          const double dist = std::fabs(x - mouse.x);
+          if (dist < best_x_dist) {
+            best_x_dist = dist;
+            col = c;
+          }
+        }
+        int row = 0;
+        double best_y_dist = std::numeric_limits<double>::infinity();
+        for (int r = 0; r < rows; ++r) {
+          const double offset =
+              p.data2 != nullptr && p.len2 == static_cast<std::uint32_t>(rows)
+                  ? static_cast<double>(p.data2[r])
+                  : static_cast<double>(r);
+          const double dist = std::fabs(offset - mouse.y);
+          if (dist < best_y_dist) {
+            best_y_dist = dist;
+            row = r;
+          }
+        }
+        const std::size_t idx =
+            static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) +
+            static_cast<std::size_t>(col);
+        if (idx < p.len0) {
+          const double x = p.i0 != 0 && p.data1 != nullptr &&
+                                   p.len1 == static_cast<std::uint32_t>(cols)
+                               ? static_cast<double>(p.data1[col])
+                               : static_cast<double>(col);
+          const double offset =
+              p.data2 != nullptr && p.len2 == static_cast<std::uint32_t>(rows)
+                  ? static_cast<double>(p.data2[row])
+                  : static_cast<double>(row);
+          const double z = static_cast<double>(p.data0[idx]);
+          const double y = offset + z * (std::isfinite(p.f1) ? p.f1 : 1.0f);
+          lines.push_back(format_text("%s: row=%d col=%d x=%.6g z=%.6g",
+                                      prefix.c_str(), row, col, x, z));
+          consider_point_highlight(x, y, x_axis, y_axis, prim_color, 4.5f);
+        }
+        break;
+      }
+      case kPrimSpectrogram: {
+        if (p.data0 == nullptr || p.i1 <= 0 || p.i2 <= 0) {
+          break;
+        }
+        const int rows = p.i1;
+        const int cols = p.i2;
+        const double x0 = std::isfinite(static_cast<double>(p.f2)) ? p.f2 : 0.0;
+        const double x1 =
+            std::isfinite(static_cast<double>(p.f3)) ? p.f3 : static_cast<double>(cols);
+        const double y0 = std::isfinite(static_cast<double>(p.f4)) ? p.f4 : 0.0;
+        const double y1 =
+            std::isfinite(static_cast<double>(p.f5)) ? p.f5 : static_cast<double>(rows);
+        if (mouse.x < std::min(x0, x1) || mouse.x > std::max(x0, x1) ||
+            mouse.y < std::min(y0, y1) || mouse.y > std::max(y0, y1)) {
+          break;
+        }
+        const double ux = (mouse.x - x0) / std::max(1e-12, std::fabs(x1 - x0));
+        const double uy = (mouse.y - y0) / std::max(1e-12, std::fabs(y1 - y0));
+        const int col = std::clamp(static_cast<int>(std::floor(ux * cols)), 0, cols - 1);
+        const int row = std::clamp(static_cast<int>(std::floor(uy * rows)), 0, rows - 1);
+        const std::size_t idx =
+            static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) +
+            static_cast<std::size_t>(col);
+        if (idx < p.len0) {
+          const double z = static_cast<double>(p.data0[idx]);
+          const double cx0 = x0 + (x1 - x0) * (static_cast<double>(col) / cols);
+          const double cx1 = x0 + (x1 - x0) * (static_cast<double>(col + 1) / cols);
+          const double cy0 = y0 + (y1 - y0) * (static_cast<double>(row) / rows);
+          const double cy1 = y0 + (y1 - y0) * (static_cast<double>(row + 1) / rows);
+          lines.push_back(format_text("%s: row=%d col=%d value=%.6g",
+                                      prefix.c_str(), row, col, z));
+          consider_rect_highlight(cx0, cy0, cx1, cy1, x_axis, y_axis, prim_color);
+        }
+        break;
+      }
       case kPrimPieChart: {
         if (p.data0 == nullptr || p.len0 == 0U || !std::isfinite(p.f6)) {
           break;
@@ -2950,7 +3763,8 @@ bool ImPlotLayer::render(const float *draw_points, std::uint32_t point_count,
       1.0f, std::round(static_cast<float>(state->height) * state->dpr)));
   glViewport(0, 0, fb_w, fb_h);
   glDisable(GL_SCISSOR_TEST);
-  glClearColor(0.027f, 0.043f, 0.051f, 1.0f);
+  const ImVec4 clear_col = clear_color_for_theme(state->theme_name);
+  glClearColor(clear_col.x, clear_col.y, clear_col.z, clear_col.w);
   glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
   ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 

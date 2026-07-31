@@ -93,6 +93,7 @@ Core methods:
 - `createPlot(target, options)`
 - `createDashboard(target, { rows, cols, linkX, linkY })`
 - `plot.line(name, y, options)`
+- `plot.lines(series, options)`
 - `plot.streamLine(name, { capacity, initial })`
 - `handle.setData(y, { x })`
 - `handle.append(y)`
@@ -108,6 +109,7 @@ Core methods:
 - `plot.setLinkedCrosshair(groupId, { axis })`
 - `plot.getState({ includeData })` / `plot.setState(state)`
 - `plot.exportJSONState({ includeData, filename })`
+- `plot.exportHTML({ title })`
 - `plot.getView()`
 - `plot.getPerfStats()`
 - `plot.dispose()`
@@ -129,6 +131,7 @@ Plot primitives:
 - `errorBars`, `errorBarsH`
 - `infLines`, `vlines`, `hlines`
 - `histogram`, `histogram2d`, `heatmap`, `image`, `pieChart`
+- `candlestick`, `ohlc`, `quiver`, `contour`, `waterfall`, `spectrogram`
 - `text`, `annotation`, `dummy`
 - `tagX`, `tagY`
 - `colormapSlider`, `colormapButton`, `colormapSelector`
@@ -151,6 +154,23 @@ Use `Float32Array` for the fastest path:
 ```js
 const y = new Float32Array(10_000_000);
 plot.line("large", y);
+```
+
+Batch related lines with one API call:
+
+```js
+const handles = plot.lines({
+  mid: { x, y: mid, color: "#1f6f66" },
+  vwap: { x, y: vwap, color: "#b74b2b" },
+});
+```
+
+`Date` inputs become ImPlot time-axis values automatically, and string/category
+x values become labeled ticks:
+
+```js
+plot.line("latency", latency, { x: dateArray });
+plot.scatter("scores", new Float32Array([0.7, 0.9, 0.6]), { x: ["A", "B", "C"] });
 ```
 
 ## Interaction Callbacks
@@ -195,6 +215,14 @@ plot.requestRender();
 plot.draw();
 ```
 
+Theme presets are applied by the WASM/C++ layer:
+
+```js
+plot.setTheme("publication");
+plot.setTheme("finance");
+plot.setTheme("dark-terminal");
+```
+
 For explicit x coordinates:
 
 ```js
@@ -230,6 +258,15 @@ await plot.copy_png_to_clipboard();
 The export methods redraw the current strict WASM/ImPlot canvas immediately
 before reading pixels. They do not use a JavaScript renderer fallback.
 
+For standalone HTML state export:
+
+```js
+const html = plot.exportHTML({ title: "Signal Export" });
+const same = plot.export_html({ title: "Signal Export" });
+```
+
+The exported page reloads `@nbimplot/web` and renders through WASM/ImPlot.
+
 For `heatmap`, pass a flat `Float32Array` plus shape:
 
 ```js
@@ -249,6 +286,17 @@ plot.image("img", pixels, {
   cols: 512,
   channels: 4,
 });
+```
+
+Specialty scientific and financial methods are also available:
+
+```js
+plot.candlestick("candles", open, high, low, close, { x, width: 0.7 });
+plot.ohlc("ohlc", open, high, low, close, { x, width: 0.35 });
+plot.quiver("field", x, y, u, v, { scale: 0.08, normalize: true });
+plot.contour("contours", z, { rows, cols, levels, bounds: [[-3, -3], [3, 3]] });
+plot.waterfall("waterfall", z, { rows, cols, scale: 0.18 });
+plot.spectrogram("spectrogram", z, { rows, cols, labelFmt: "", showColorbar: true });
 ```
 
 ## Interactions

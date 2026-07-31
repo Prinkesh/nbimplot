@@ -42,6 +42,12 @@ const PRIMITIVE_KIND_CODES = Object.freeze({
   drag_drop_plot: 30,
   drag_drop_axis: 31,
   drag_drop_legend: 32,
+  candlestick: 33,
+  ohlc: 34,
+  quiver: 35,
+  contour: 36,
+  waterfall: 37,
+  spectrogram: 38,
 });
 
 const PLOT_FLAGS = Object.freeze({
@@ -683,6 +689,14 @@ class WasmCoreSession {
     }
     const value = name === null || name === undefined ? "" : String(name);
     return this._withCString(value, (ptr) => this.module._nbp_set_colormap(this.handle, ptr) === 0);
+  }
+
+  setTheme(name) {
+    if (!this.isReady() || typeof this.module._nbp_set_theme !== "function") {
+      return false;
+    }
+    const value = name === null || name === undefined ? "" : String(name);
+    return this._withCString(value, (ptr) => this.module._nbp_set_theme(this.handle, ptr) === 0);
   }
 
   setView(view) {
@@ -1368,6 +1382,53 @@ class PlotRuntime {
         floats[6] = Number.isFinite(Number(payload.uv1X)) ? Number(payload.uv1X) : 1.0;
         floats[7] = Number.isFinite(Number(payload.uv1Y)) ? Number(payload.uv1Y) : 1.0;
         break;
+      case "candlestick":
+      case "ohlc":
+        floats[1] = Number(payload.width || 0.6);
+        break;
+      case "quiver":
+        ints[1] = payload.normalize ? 1 : 0;
+        floats[1] = Number(payload.scale || 1.0);
+        break;
+      case "contour":
+        ints[1] = Number(payload.rows || 0) | 0;
+        ints[2] = Number(payload.cols || 0) | 0;
+        ints[6] = Math.max(0, Number(payload.levels || 0) | 0);
+        floats[0] = Number.isFinite(Number(payload.boundsXMin)) ? Number(payload.boundsXMin) : 0.0;
+        floats[1] = Number.isFinite(Number(payload.boundsXMax)) ? Number(payload.boundsXMax) : Number(payload.cols || 0);
+        floats[2] = Number.isFinite(Number(payload.boundsYMin)) ? Number(payload.boundsYMin) : 0.0;
+        floats[3] = Number.isFinite(Number(payload.boundsYMax)) ? Number(payload.boundsYMax) : Number(payload.rows || 0);
+        floats[4] = Number(payload.lineWeight || 1.0);
+        break;
+      case "waterfall":
+        ints[1] = Number(payload.rows || 0) | 0;
+        ints[2] = Number(payload.cols || 0) | 0;
+        floats[1] = Number(payload.scale || 1.0);
+        break;
+      case "spectrogram":
+        ints[1] = Number(payload.rows || 0) | 0;
+        ints[2] = Number(payload.cols || 0) | 0;
+        ints[3] = Math.max(0, Number(payload.heatmapFlags || 0) | 0);
+        ints[0] = payload.showColorbar ? 1 : 0;
+        ints[6] = Math.max(0, Number(payload.colorbarFlags || 0) | 0);
+        floats[0] =
+          payload.scaleMin != null && Number.isFinite(Number(payload.scaleMin))
+            ? Number(payload.scaleMin)
+            : Number.NaN;
+        floats[1] =
+          payload.scaleMax != null && Number.isFinite(Number(payload.scaleMax))
+            ? Number(payload.scaleMax)
+            : Number.NaN;
+        floats[2] = Number.isFinite(Number(payload.boundsXMin)) ? Number(payload.boundsXMin) : 0.0;
+        floats[3] = Number.isFinite(Number(payload.boundsXMax)) ? Number(payload.boundsXMax) : Number(payload.cols || 0);
+        floats[4] = Number.isFinite(Number(payload.boundsYMin)) ? Number(payload.boundsYMin) : 0.0;
+        floats[5] = Number.isFinite(Number(payload.boundsYMax)) ? Number(payload.boundsYMax) : Number(payload.rows || 0);
+        text = `${labelFormatOrDefault(payload.labelFmt, "")}${HEATMAP_META_SEP}${
+          payload.colorbarLabel === null || payload.colorbarLabel === undefined
+            ? ""
+            : String(payload.colorbarLabel)
+        }${HEATMAP_META_SEP}${labelFormatOrDefault(payload.colorbarFormat, "%g")}`;
+        break;
       case "tag_x":
         floats[4] = Number(payload.value || 0.0);
         ints[1] = payload.roundValue ? 1 : 0;
@@ -1607,6 +1668,7 @@ class PlotRuntime {
     this._syncAxisStateToWasm();
     this._syncAxisConfigToWasm();
     this._syncColormapToWasm();
+    this._syncThemeToWasm();
     this.wasmStatus = "ready";
 
     if (this.view.initialized) {
@@ -1746,6 +1808,13 @@ class PlotRuntime {
       return false;
     }
     return this.wasm.setColormap(this.colormapName);
+  }
+
+  _syncThemeToWasm() {
+    if (!this.wasmReady) {
+      return false;
+    }
+    return this.wasm.setTheme(this.themeName || "nbimplot");
   }
 
   _buildDom() {
@@ -1915,6 +1984,9 @@ class PlotRuntime {
         break;
       case "line":
         this._handleLineMessage(content, buffers);
+        break;
+      case "lines":
+        this._handleLinesMessage(content, buffers);
         break;
       case "set_data":
         this._handleSetDataMessage(content, buffers);
@@ -2201,6 +2273,19 @@ class PlotRuntime {
     this._markDirty();
   }
 
+  _handleLinesMessage(content, buffers) {
+    const items = Array.isArray(content.items) ? content.items : [];
+    for (const item of items) {
+      if (!item || typeof item !== "object") {
+        continue;
+      }
+      const hasX = Boolean(item.has_x);
+      const start = Math.max(0, Number(item.buffer_index || 0) | 0);
+      const itemBuffers = hasX ? [buffers?.[start], buffers?.[start + 1]] : [buffers?.[start]];
+      this._handleLineMessage(item, itemBuffers);
+    }
+  }
+
   _handleSetDataMessage(content, buffers) {
     const record = this.series.get(content.series_id);
     if (!record) {
@@ -2366,6 +2451,9 @@ class PlotRuntime {
     this.themeName = content.name === undefined || content.name === null ? "" : String(content.name);
     if (this.wrapper) {
       this.wrapper.dataset.nbimplotTheme = this.themeName || "nbimplot";
+    }
+    if (this.wasmReady) {
+      this.wasm.setTheme(this.themeName);
     }
     this._markDirty();
   }
@@ -2640,6 +2728,11 @@ class PlotRuntime {
       x2: Number(content.x2 || 1),
       y2: Number(content.y2 || 1),
       thickness: Number(content.thickness || 1),
+      width: Number(content.width || 0.6),
+      scale: Number(content.scale || 1),
+      normalize: Boolean(content.normalize),
+      levels: Math.max(0, Number(content.levels || 0) | 0),
+      lineWeight: Number(content.line_weight || 1),
       xAxis: Math.min(2, Math.max(0, Number(content.x_axis || 0) | 0)),
       yAxis: Math.min(5, Math.max(3, Number(content.y_axis || 3) | 0)),
       subplotIndex: Math.max(0, Number(content.subplot_index || 0) | 0),

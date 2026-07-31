@@ -15,7 +15,7 @@
 namespace {
 
 constexpr float kRawSwitchFactor = 3.0f;
-constexpr std::uint32_t kLodBlockSize = 256;
+constexpr std::uint32_t kLodBaseBlockSize = 64;
 
 template <typename T> T clamp_value(T value, T min_value, T max_value) {
   return std::max(min_value, std::min(max_value, value));
@@ -59,6 +59,12 @@ struct Series {
 
   std::uint64_t block_cache_version = 0;
   std::vector<LodBlockSummary> block_cache;
+  std::uint64_t pyramid_cache_version = 0;
+  struct LodPyramidLevel {
+    std::uint32_t block_size = 0;
+    std::vector<LodBlockSummary> blocks;
+  };
+  std::vector<LodPyramidLevel> pyramid_cache;
 };
 
 enum PrimitiveKind : std::int32_t {
@@ -94,6 +100,12 @@ enum PrimitiveKind : std::int32_t {
   kPrimDragDropPlot = 30,
   kPrimDragDropAxis = 31,
   kPrimDragDropLegend = 32,
+  kPrimCandlestick = 33,
+  kPrimOHLC = 34,
+  kPrimQuiver = 35,
+  kPrimContour = 36,
+  kPrimWaterfall = 37,
+  kPrimSpectrogram = 38,
 };
 
 constexpr std::int32_t kInteractionSelection = 100;
@@ -154,6 +166,7 @@ struct PlotCore {
   std::int32_t aligned_group_enabled = 0;
   std::int32_t aligned_group_vertical = 1;
   std::string colormap_name;
+  std::string theme_name;
 
   std::int32_t canvas_width = 900;
   std::int32_t canvas_height = 450;
@@ -225,6 +238,8 @@ void reset_lod_cache(Series &series) {
   series.lod_xy.clear();
   series.block_cache_version = 0;
   series.block_cache.clear();
+  series.pyramid_cache_version = 0;
+  series.pyramid_cache.clear();
 }
 
 bool has_custom_x(const Series &series) {
@@ -380,28 +395,33 @@ void append_draw_point(std::vector<float> &draw_tuples, std::uint32_t slot,
   draw_tuples.push_back(pen_down ? 1.0f : 0.0f);
 }
 
-void ensure_lod_block_cache(Series &series) {
-  if (series.block_cache_version == series.version) {
+void ensure_lod_pyramid(Series &series) {
+  if (series.pyramid_cache_version == series.version) {
     return;
   }
 
   if (series.raw.empty()) {
     series.block_cache.clear();
     series.block_cache_version = series.version;
+    series.pyramid_cache.clear();
+    series.pyramid_cache_version = series.version;
     return;
   }
 
   const std::size_t n = series.raw.size();
+  const std::uint32_t base_block_size = kLodBaseBlockSize;
   const std::size_t block_count =
-      (n + static_cast<std::size_t>(kLodBlockSize) - 1U) /
-      static_cast<std::size_t>(kLodBlockSize);
-  series.block_cache.clear();
-  series.block_cache.resize(block_count);
+      (n + static_cast<std::size_t>(base_block_size) - 1U) /
+      static_cast<std::size_t>(base_block_size);
+  series.pyramid_cache.clear();
+  series.pyramid_cache.push_back({});
+  series.pyramid_cache.back().block_size = base_block_size;
+  series.pyramid_cache.back().blocks.resize(block_count);
 
   for (std::size_t block = 0; block < block_count; ++block) {
-    const std::size_t begin = block * static_cast<std::size_t>(kLodBlockSize);
+    const std::size_t begin = block * static_cast<std::size_t>(base_block_size);
     const std::size_t end = std::min(
-        begin + static_cast<std::size_t>(kLodBlockSize), series.raw.size());
+        begin + static_cast<std::size_t>(base_block_size), series.raw.size());
 
     LodBlockSummary summary;
     for (std::size_t i = begin; i < end; ++i) {
@@ -419,10 +439,98 @@ void ensure_lod_block_cache(Series &series) {
       }
       summary.has_finite = true;
     }
-    series.block_cache[block] = summary;
+    series.pyramid_cache.back().blocks[block] = summary;
   }
 
+  while (!series.pyramid_cache.back().blocks.empty() &&
+         series.pyramid_cache.back().blocks.size() > 1U &&
+         series.pyramid_cache.back().block_size <=
+             std::numeric_limits<std::uint32_t>::max() / 4U) {
+    const Series::LodPyramidLevel &prev = series.pyramid_cache.back();
+    Series::LodPyramidLevel next;
+    next.block_size = prev.block_size * 4U;
+    const std::size_t next_count = (prev.blocks.size() + 3U) / 4U;
+    next.blocks.resize(next_count);
+    for (std::size_t block = 0; block < next_count; ++block) {
+      LodBlockSummary summary;
+      const std::size_t begin = block * 4U;
+      const std::size_t end = std::min(begin + 4U, prev.blocks.size());
+      for (std::size_t i = begin; i < end; ++i) {
+        const LodBlockSummary &child = prev.blocks[i];
+        if (!child.has_finite) {
+          continue;
+        }
+        if (!summary.has_finite || child.min_value < summary.min_value) {
+          summary.min_value = child.min_value;
+          summary.min_index = child.min_index;
+        }
+        if (!summary.has_finite || child.max_value > summary.max_value) {
+          summary.max_value = child.max_value;
+          summary.max_index = child.max_index;
+        }
+        summary.has_finite = true;
+      }
+      next.blocks[block] = summary;
+    }
+    series.pyramid_cache.push_back(std::move(next));
+  }
+
+  series.block_cache = series.pyramid_cache.front().blocks;
   series.block_cache_version = series.version;
+  series.pyramid_cache_version = series.version;
+}
+
+template <typename UpdateFn>
+void summarize_range_with_pyramid(Series &series, std::int32_t begin,
+                                  std::int32_t end, UpdateFn update_point) {
+  ensure_lod_pyramid(series);
+  if (begin < 0 || end <= begin) {
+    return;
+  }
+  const float *raw_data = series.raw.data();
+  const std::int32_t count = end - begin;
+  const Series::LodPyramidLevel *level = nullptr;
+  for (const auto &candidate : series.pyramid_cache) {
+    if (candidate.block_size == 0U || candidate.blocks.empty()) {
+      continue;
+    }
+    if (count >= static_cast<std::int32_t>(candidate.block_size * 4U)) {
+      level = &candidate;
+    } else {
+      break;
+    }
+  }
+  if (level == nullptr) {
+    for (std::int32_t i = begin; i < end; ++i) {
+      update_point(i, raw_data[static_cast<std::size_t>(i)]);
+    }
+    return;
+  }
+
+  const std::int32_t block_size = static_cast<std::int32_t>(level->block_size);
+  const std::int32_t aligned_start =
+      ((begin + block_size - 1) / block_size) * block_size;
+  const std::int32_t aligned_end = (end / block_size) * block_size;
+  std::int32_t i = begin;
+  for (; i < std::min(end, aligned_start); ++i) {
+    update_point(i, raw_data[static_cast<std::size_t>(i)]);
+  }
+  for (std::int32_t block_begin = aligned_start; block_begin < aligned_end;
+       block_begin += block_size) {
+    const std::size_t block_idx = static_cast<std::size_t>(block_begin / block_size);
+    if (block_idx >= level->blocks.size()) {
+      break;
+    }
+    const LodBlockSummary &summary = level->blocks[block_idx];
+    if (!summary.has_finite) {
+      continue;
+    }
+    update_point(summary.min_index, summary.min_value);
+    update_point(summary.max_index, summary.max_value);
+  }
+  for (i = std::max(i, aligned_end); i < end; ++i) {
+    update_point(i, raw_data[static_cast<std::size_t>(i)]);
+  }
 }
 
 void build_min_max_lod(Series &series, std::int32_t start, std::int32_t end,
@@ -441,11 +549,7 @@ void build_min_max_lod(Series &series, std::int32_t start, std::int32_t end,
     return;
   }
 
-  ensure_lod_block_cache(series);
-
   const std::int32_t visible_count = end - start + 1;
-  const std::int32_t block_size = static_cast<std::int32_t>(kLodBlockSize);
-  const float *raw_data = series.raw.data();
 
   series.lod_xy.clear();
   series.lod_xy.reserve(static_cast<std::size_t>(pixel_width) * 4);
@@ -483,37 +587,7 @@ void build_min_max_lod(Series &series, std::int32_t start, std::int32_t end,
       }
     };
 
-    std::int32_t i = bucket_start;
-    if (bucket_end - bucket_start >= block_size * 2 &&
-        !series.block_cache.empty()) {
-      const std::int32_t aligned_start =
-          ((bucket_start + block_size - 1) / block_size) * block_size;
-      const std::int32_t aligned_end = (bucket_end / block_size) * block_size;
-
-      for (; i < std::min(bucket_end, aligned_start); ++i) {
-        update_point(i, raw_data[static_cast<std::size_t>(i)]);
-      }
-
-      for (std::int32_t block_begin = aligned_start; block_begin < aligned_end;
-           block_begin += block_size) {
-        const std::size_t block_idx =
-            static_cast<std::size_t>(block_begin / block_size);
-        if (block_idx >= series.block_cache.size()) {
-          break;
-        }
-        const LodBlockSummary &summary = series.block_cache[block_idx];
-        if (!summary.has_finite) {
-          continue;
-        }
-        update_point(summary.min_index, summary.min_value);
-        update_point(summary.max_index, summary.max_value);
-      }
-      i = std::max(i, aligned_end);
-    }
-
-    for (; i < bucket_end; ++i) {
-      update_point(i, raw_data[static_cast<std::size_t>(i)]);
-    }
+    summarize_range_with_pyramid(series, bucket_start, bucket_end, update_point);
 
     if (!std::isfinite(min_value) || !std::isfinite(max_value)) {
       continue;
@@ -564,10 +638,6 @@ void build_min_max_lod_custom_x(Series &series, std::int32_t start,
     return;
   }
 
-  ensure_lod_block_cache(series);
-
-  const std::int32_t block_size = static_cast<std::int32_t>(kLodBlockSize);
-  const float *raw_data = series.raw.data();
   const float *raw_x = series.raw_x.data();
   const double x_range = view_x_max - view_x_min;
 
@@ -607,37 +677,7 @@ void build_min_max_lod_custom_x(Series &series, std::int32_t start,
       }
     };
 
-    std::int32_t i = bucket_start;
-    if (bucket_end - bucket_start >= block_size * 2 &&
-        !series.block_cache.empty()) {
-      const std::int32_t aligned_start =
-          ((bucket_start + block_size - 1) / block_size) * block_size;
-      const std::int32_t aligned_end = (bucket_end / block_size) * block_size;
-
-      for (; i < std::min(bucket_end, aligned_start); ++i) {
-        update_point(i, raw_data[static_cast<std::size_t>(i)]);
-      }
-
-      for (std::int32_t block_begin = aligned_start; block_begin < aligned_end;
-           block_begin += block_size) {
-        const std::size_t block_idx =
-            static_cast<std::size_t>(block_begin / block_size);
-        if (block_idx >= series.block_cache.size()) {
-          break;
-        }
-        const LodBlockSummary &summary = series.block_cache[block_idx];
-        if (!summary.has_finite) {
-          continue;
-        }
-        update_point(summary.min_index, summary.min_value);
-        update_point(summary.max_index, summary.max_value);
-      }
-      i = std::max(i, aligned_end);
-    }
-
-    for (; i < bucket_end; ++i) {
-      update_point(i, raw_data[static_cast<std::size_t>(i)]);
-    }
+    summarize_range_with_pyramid(series, bucket_start, bucket_end, update_point);
 
     if (std::isfinite(min_value) && std::isfinite(max_value)) {
       if (min_index <= max_index) {
@@ -919,6 +959,93 @@ void autoscale(PlotCore &plot) {
       }
       break;
     }
+    case kPrimCandlestick:
+    case kPrimOHLC: {
+      const std::size_t n =
+          std::min(p.data0.size(), std::min(p.data1.size(), p.data2.size() / 3U));
+      for (std::size_t i = 0; i < n; ++i) {
+        const float x = p.data0[i];
+        const float open = p.data1[i];
+        const float high = p.data2[i * 3U + 0U];
+        const float low = p.data2[i * 3U + 1U];
+        const float close = p.data2[i * 3U + 2U];
+        update_point(x, low);
+        update_point(x, high);
+        update_point(x, open);
+        update_point(x, close);
+      }
+      break;
+    }
+    case kPrimQuiver: {
+      const std::size_t n =
+          std::min(p.data0.size(), std::min(p.data1.size(), p.data2.size() / 2U));
+      const float scale = std::isfinite(p.floats[1]) ? p.floats[1] : 1.0f;
+      for (std::size_t i = 0; i < n; ++i) {
+        const float x = p.data0[i];
+        const float y = p.data1[i];
+        float u = p.data2[i * 2U + 0U];
+        float v = p.data2[i * 2U + 1U];
+        if (p.ints[1] != 0) {
+          const float mag = std::sqrt(u * u + v * v);
+          if (mag > 1e-12f && std::isfinite(mag)) {
+            u /= mag;
+            v /= mag;
+          }
+        }
+        update_point(x, y);
+        update_point(x + u * scale, y + v * scale);
+      }
+      break;
+    }
+    case kPrimContour:
+    case kPrimSpectrogram: {
+      const int rows = std::max(0, p.ints[1]);
+      const int cols = std::max(0, p.ints[2]);
+      if (rows > 0 && cols > 0) {
+        const float x0 = std::isfinite(p.floats[0]) ? p.floats[0] : 0.0f;
+        const float x1 = std::isfinite(p.floats[1]) ? p.floats[1] : static_cast<float>(cols);
+        const float y0 = std::isfinite(p.floats[2]) ? p.floats[2] : 0.0f;
+        const float y1 = std::isfinite(p.floats[3]) ? p.floats[3] : static_cast<float>(rows);
+        if (p.kind == kPrimSpectrogram) {
+          const float sx0 = std::isfinite(p.floats[2]) ? p.floats[2] : 0.0f;
+          const float sx1 = std::isfinite(p.floats[3]) ? p.floats[3] : static_cast<float>(cols);
+          const float sy0 = std::isfinite(p.floats[4]) ? p.floats[4] : 0.0f;
+          const float sy1 = std::isfinite(p.floats[5]) ? p.floats[5] : static_cast<float>(rows);
+          update_point(sx0, sy0);
+          update_point(sx1, sy1);
+        } else {
+          update_point(x0, y0);
+          update_point(x1, y1);
+        }
+      }
+      break;
+    }
+    case kPrimWaterfall: {
+      const int rows = std::max(0, p.ints[1]);
+      const int cols = std::max(0, p.ints[2]);
+      const std::size_t expected =
+          static_cast<std::size_t>(rows) * static_cast<std::size_t>(cols);
+      if (rows > 0 && cols > 0 && p.data0.size() >= expected) {
+        const float scale = std::isfinite(p.floats[1]) ? p.floats[1] : 1.0f;
+        for (int r = 0; r < rows; ++r) {
+          const float offset =
+              p.data2.size() == static_cast<std::size_t>(rows)
+                  ? p.data2[static_cast<std::size_t>(r)]
+                  : static_cast<float>(r);
+          for (int c = 0; c < cols; ++c) {
+            const std::size_t idx =
+                static_cast<std::size_t>(r) * static_cast<std::size_t>(cols) +
+                static_cast<std::size_t>(c);
+            const float x =
+                p.ints[0] != 0 && p.data1.size() == static_cast<std::size_t>(cols)
+                    ? p.data1[static_cast<std::size_t>(c)]
+                    : static_cast<float>(c);
+            update_point(x, offset + p.data0[idx] * scale);
+          }
+        }
+      }
+      break;
+    }
     case kPrimPieChart: {
       const float cx = p.floats[4];
       const float cy = p.floats[5];
@@ -1142,7 +1269,7 @@ std::int32_t nbp_primitive_set_data(
   if (plot == nullptr || primitive_id == 0) {
     return -1;
   }
-  if (kind < kPrimScatter || kind > kPrimDragDropLegend) {
+  if (kind < kPrimScatter || kind > kPrimSpectrogram) {
     return -1;
   }
 
@@ -1510,6 +1637,19 @@ std::int32_t nbp_set_colormap(std::uint32_t handle, const char *name) {
     plot->colormap_name.clear();
   } else {
     plot->colormap_name = name;
+  }
+  return 0;
+}
+
+std::int32_t nbp_set_theme(std::uint32_t handle, const char *name) {
+  PlotCore *plot = get_plot(handle);
+  if (plot == nullptr) {
+    return -1;
+  }
+  if (name == nullptr || name[0] == '\0') {
+    plot->theme_name = "nbimplot";
+  } else {
+    plot->theme_name = name;
   }
   return 0;
 }
@@ -1952,6 +2092,7 @@ std::int32_t nbp_render(std::uint32_t handle, const char *title_id) {
       plot->aligned_group_enabled,
       plot->aligned_group_id.empty() ? nullptr : plot->aligned_group_id.c_str(),
       plot->aligned_group_vertical,
+      plot->theme_name.empty() ? nullptr : plot->theme_name.c_str(),
       plot->colormap_name.empty() ? nullptr : plot->colormap_name.c_str(),
       plot->primitive_views.empty() ? nullptr : plot->primitive_views.data(),
       selection_state, hover_state, click_state,

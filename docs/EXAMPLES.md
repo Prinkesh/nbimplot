@@ -77,6 +77,65 @@ p.render()
 `line(..., x=x)` requires finite, sorted, equal-length `x` and `y` arrays.
 `x_axis="x2"` selects an ImPlot axis slot; it does not provide x data.
 
+## Batch Lines
+
+Upload several related series at once with `lines(...)`. In notebooks this
+sends one widget message with multiple binary buffers, avoiding per-series comm
+round trips:
+
+```python
+t = np.linspace(0, 120, 200_000, dtype=np.float32)
+mid = np.sin(t * 0.08).astype(np.float32)
+vwap = (np.sin(t * 0.08) + 0.08 * np.cos(t * 0.31)).astype(np.float32)
+spread = (0.15 + 0.03 * np.sin(t * 0.17)).astype(np.float32)
+
+p = ip.Plot(width=1100, height=420, title="Batch Line Upload")
+handles = p.lines(
+    {
+        "mid": {"x": t, "y": mid, "color": "#1f6f66"},
+        "vwap": {"x": t, "y": vwap, "color": "#b74b2b"},
+        "spread": {"x": t, "y": spread, "color": "#3f5f8f"},
+    },
+    line_weight=1.6,
+)
+p.show()
+
+handles[0].set_data((mid * 0.95).astype(np.float32), x=t)
+p.render()
+```
+
+Dataframe equivalent:
+
+```python
+handles = p.lines(df, x="time", y=["mid", "vwap", "spread"])
+```
+
+## Datetime And Categorical X Data
+
+Datetime inputs are normalized to ImPlot time axes automatically. Categorical x
+inputs are encoded as integer locations with matching axis ticks:
+
+```python
+import pandas as pd
+
+ts = pd.date_range("2026-01-01 09:30", periods=240, freq="min")
+latency = (10 + np.sin(np.arange(240) * 0.08)).astype(np.float32)
+
+p = ip.Plot(width=1000, height=360, title="Datetime Axis")
+p.line("latency", latency, x=ts)
+p.show()
+```
+
+```python
+labels = ["alpha", "beta", "gamma", "delta"]
+scores = np.array([0.72, 0.91, 0.64, 0.83], dtype=np.float32)
+
+p = ip.Plot(width=900, height=340, title="Categorical Axis")
+p.scatter("score", scores, x=labels, size=5)
+p.bars("score bars", scores)
+p.show()
+```
+
 ## PNG Export
 
 ```python
@@ -294,6 +353,62 @@ p.image(
 p.show()
 ```
 
+## Financial Plots
+
+Candlestick and OHLC plots are implemented in the C++/WASM ImPlot layer using
+ImPlot plot-coordinate transforms and draw-list item integration:
+
+```python
+rng = np.random.default_rng(202)
+n = 180
+x = np.arange(n, dtype=np.float32)
+close = (100 + rng.normal(0, 1.2, n).cumsum()).astype(np.float32)
+open_ = np.r_[close[0], close[:-1]].astype(np.float32)
+high = (np.maximum(open_, close) + rng.random(n) * 2.0).astype(np.float32)
+low = (np.minimum(open_, close) - rng.random(n) * 2.0).astype(np.float32)
+
+p = ip.Plot(width=1100, height=420, title="Candlestick + OHLC")
+p.set_theme("finance")
+p.candlestick("candles", x=x, open=open_, high=high, low=low, close=close, width=0.7)
+p.ohlc("ohlc", x=x, open=open_, high=high, low=low, close=close, width=0.35)
+p.show()
+```
+
+## Scientific Fields And Matrices
+
+Use `contour(...)`, `quiver(...)`, `waterfall(...)`, and `spectrogram(...)` for
+field and matrix workflows:
+
+```python
+grid = np.linspace(-3, 3, 96, dtype=np.float32)
+xx, yy = np.meshgrid(grid, grid)
+z = (np.sin(xx * yy) + 0.25 * np.cos(2 * xx)).astype(np.float32)
+
+p = ip.Plot(width=1100, height=760, title="Scientific Specialty Plots")
+p.set_subplots_config(rows=2, cols=2)
+p.set_colormap("Viridis")
+p.contour(
+    "contour",
+    z,
+    levels=np.linspace(-1.0, 1.0, 11, dtype=np.float32),
+    bounds=((-3, -3), (3, 3)),
+    subplot_index=0,
+)
+p.quiver(
+    "vector field",
+    xx[::8, ::8].ravel(),
+    yy[::8, ::8].ravel(),
+    -yy[::8, ::8].ravel(),
+    xx[::8, ::8].ravel(),
+    scale=0.08,
+    normalize=True,
+    subplot_index=1,
+)
+p.waterfall("waterfall", z[::4], scale=0.18, subplot_index=2)
+p.spectrogram("spectrogram", z, label_fmt="", show_colorbar=True, subplot_index=3)
+p.show()
+```
+
 ## Pie / Text / Annotation / Tags
 
 ```python
@@ -483,3 +598,25 @@ h.set_window(3000)
 h.set_stream_options(auto_render=True, autoscale_y=False)
 stream.render()
 ```
+
+## Theme Presets And Standalone HTML
+
+Themes are applied inside the C++/WASM layer. Built-in presets are `nbimplot`,
+`notebook`, `publication`, `finance`, `lab`, and `dark-terminal`:
+
+```python
+p = ip.Plot(width=1000, height=360, title="Theme Presets")
+p.set_theme("publication")
+p.set_colormap("Plasma")
+p.line("signal", y, x=t)
+p.show()
+```
+
+Export a reusable standalone web page from notebook state:
+
+```python
+html_text = p.export_html("theme-demo.html", title="Theme Demo")
+```
+
+The exported HTML loads `@nbimplot/web` and renders through the same WASM/ImPlot
+core. It is not a JavaScript renderer fallback.

@@ -71,6 +71,7 @@ window.__nbimplotExamplesDemo = state;
 const ids = [
   "line-lod-plot",
   "streaming-plot",
+  "batch-datetime-plot",
   "scatter-plot",
   "curve-plot",
   "bars-plot",
@@ -81,6 +82,8 @@ const ids = [
   "subplots-plot",
   "drag-plot",
   "colormap-plot",
+  "finance-plot",
+  "science-plot",
   "advanced-api-plot",
 ];
 
@@ -187,6 +190,54 @@ function makeMatrix(rows, cols, phase = 0) {
     }
   }
   return z;
+}
+
+function makeFinancialBars(n, seed = 29) {
+  const normal = normalFactory(seed);
+  const x = range(n, 1);
+  const open = new Float32Array(n);
+  const high = new Float32Array(n);
+  const low = new Float32Array(n);
+  const close = new Float32Array(n);
+  let price = 100;
+  for (let i = 0; i < n; i += 1) {
+    open[i] = price;
+    const drift = 0.05 * Math.sin(i * 0.07) + normal() * 0.9;
+    close[i] = Math.max(1, open[i] + drift);
+    high[i] = Math.max(open[i], close[i]) + 0.4 + Math.abs(normal()) * 0.8;
+    low[i] = Math.min(open[i], close[i]) - 0.4 - Math.abs(normal()) * 0.8;
+    price = close[i];
+  }
+  return { x, open, high, low, close };
+}
+
+function makeField(rows, cols) {
+  const z = new Float32Array(rows * cols);
+  const qn = 12;
+  const qx = new Float32Array(qn * qn);
+  const qy = new Float32Array(qn * qn);
+  const qu = new Float32Array(qn * qn);
+  const qv = new Float32Array(qn * qn);
+  for (let r = 0; r < rows; r += 1) {
+    const y = -3 + (6 * r) / Math.max(1, rows - 1);
+    for (let c = 0; c < cols; c += 1) {
+      const x = -3 + (6 * c) / Math.max(1, cols - 1);
+      z[r * cols + c] = Math.sin(x * y) + 0.25 * Math.cos(2 * x) - 0.15 * Math.sin(1.7 * y);
+    }
+  }
+  let k = 0;
+  for (let r = 0; r < qn; r += 1) {
+    const y = -3 + (6 * r) / Math.max(1, qn - 1);
+    for (let c = 0; c < qn; c += 1) {
+      const x = -3 + (6 * c) / Math.max(1, qn - 1);
+      qx[k] = x;
+      qy[k] = y;
+      qu[k] = -y;
+      qv[k] = x;
+      k += 1;
+    }
+  }
+  return { z, qx, qy, qu, qv };
 }
 
 function makeImage(rows, cols) {
@@ -572,6 +623,48 @@ async function buildStreaming() {
   return plot;
 }
 
+async function buildBatchDatetime() {
+  const n = 360;
+  const dates = new Array(n);
+  const mid = new Float32Array(n);
+  const vwap = new Float32Array(n);
+  const scoreX = ["baseline", "candidate-a", "candidate-b", "production"];
+  const scores = new Float32Array([0.72, 0.91, 0.64, 0.83]);
+  const start = Date.UTC(2026, 0, 1, 9, 30, 0);
+  for (let i = 0; i < n; i += 1) {
+    dates[i] = new Date(start + i * 60_000);
+    mid[i] = Math.sin(i * 0.035) + 0.15 * Math.sin(i * 0.19);
+    vwap[i] = mid[i] + 0.08 * Math.cos(i * 0.09);
+  }
+
+  const plot = await mountPlot("batch-datetime-plot", {
+    title: "Batch Lines + Time + Categories",
+  });
+  plot.setTheme("publication");
+  plot.setSubplots(1, 2, { noResize: false });
+  plot.setAxisLabel("x1", "time/category");
+  plot.setAxisLabel("y1", "value");
+  const handles = plot.lines({
+    mid: { x: dates, y: mid, color: "#1f6f66" },
+    vwap: { x: dates, y: vwap, color: "#b74b2b" },
+  }, {
+    subplotIndex: 0,
+    lineWeight: 1.7,
+  });
+  plot.scatter("model scores", scores, {
+    x: scoreX,
+    subplotIndex: 1,
+    size: 6,
+    marker: "diamond",
+  });
+  const html = plot.exportHTML({ title: "nbimplot batch datetime snapshot" });
+  plot.onHover((event) => {
+    setFeatureStatus(`Batch/datetime hover: ${event.seriesName} x=${event.x.toFixed(2)} y=${event.y.toFixed(3)}; HTML export=${html.length.toLocaleString()} bytes`);
+  });
+  setFeatureStatus(`Batch/datetime example loaded: ${handles.length} lines, categorical scatter, HTML export=${html.length.toLocaleString()} bytes.`);
+  return plot;
+}
+
 function appendStreamChunk() {
   if (!state.streamHandle) return;
   const chunk = new Float32Array(96);
@@ -853,6 +946,82 @@ async function buildColormapWidgets() {
   return plot;
 }
 
+async function buildFinanceSpecialty() {
+  const bars = makeFinancialBars(180);
+  const plot = await mountPlot("finance-plot", {
+    title: "Candlestick + OHLC",
+    crosshairs: true,
+  });
+  plot.setTheme("finance");
+  plot.setAxisLabel("x1", "bar");
+  plot.setAxisLabel("y1", "price");
+  plot.candlestick("candles", bars.open, bars.high, bars.low, bars.close, {
+    x: bars.x,
+    width: 0.72,
+  });
+  plot.ohlc("ohlc", bars.open, bars.high, bars.low, bars.close, {
+    x: bars.x,
+    width: 0.35,
+  });
+  plot.onHover((event) => {
+    setFeatureStatus(`Finance hover: ${event.seriesName} x=${event.x.toFixed(0)} y=${event.y.toFixed(2)}`);
+  });
+  return plot;
+}
+
+async function buildScienceSpecialty() {
+  const rows = 80;
+  const cols = 96;
+  const field = makeField(rows, cols);
+  const levels = new Float32Array([-1.2, -0.9, -0.6, -0.3, 0, 0.3, 0.6, 0.9, 1.2]);
+  const x = range(cols, 6 / Math.max(1, cols - 1), -3);
+  const offsets = new Float32Array(16);
+  for (let i = 0; i < offsets.length; i += 1) offsets[i] = -2.6 + i * 0.34;
+
+  const plot = await mountPlot("science-plot", {
+    title: "Contour + Quiver + Waterfall + Spectrogram",
+  });
+  plot.setTheme("lab");
+  plot.setColormap(state.activeColormap);
+  plot.setSubplots(2, 2, { noResize: false, shareItems: false });
+  plot.contour("contour", field.z, {
+    rows,
+    cols,
+    levels,
+    bounds: [[-3, -3], [3, 3]],
+    lineWeight: 1.4,
+    subplotIndex: 0,
+  });
+  plot.quiver("vector field", field.qx, field.qy, field.qu, field.qv, {
+    scale: 0.08,
+    normalize: true,
+    subplotIndex: 1,
+  });
+  plot.waterfall("waterfall", field.z.subarray(0, offsets.length * cols), {
+    rows: offsets.length,
+    cols,
+    x,
+    yOffsets: offsets,
+    scale: 0.2,
+    subplotIndex: 2,
+  });
+  plot.spectrogram("spectrogram", field.z, {
+    rows,
+    cols,
+    bounds: [[-3, -3], [3, 3]],
+    labelFmt: "",
+    showColorbar: true,
+    colorbarLabel: "z",
+    colorbarFormat: "%.2f",
+    subplotIndex: 3,
+  });
+  state.colormapPlots.push(plot);
+  plot.onHover((event) => {
+    setFeatureStatus(`Science hover: ${event.seriesName} x=${event.x.toFixed(2)} y=${event.y.toFixed(2)}`);
+  });
+  return plot;
+}
+
 async function buildAdvancedApi() {
   const n = 240;
   const x = range(n, 60);
@@ -982,6 +1151,7 @@ async function main() {
   const builders = [
     ["line-lod-plot", buildLineLod],
     ["streaming-plot", buildStreaming],
+    ["batch-datetime-plot", buildBatchDatetime],
     ["scatter-plot", buildScatter],
     ["curve-plot", buildCurveVariants],
     ["bars-plot", buildBars],
@@ -992,6 +1162,8 @@ async function main() {
     ["subplots-plot", buildSubplots],
     ["drag-plot", buildDrag],
     ["colormap-plot", buildColormapWidgets],
+    ["finance-plot", buildFinanceSpecialty],
+    ["science-plot", buildScienceSpecialty],
     ["advanced-api-plot", buildAdvancedApi],
   ];
 

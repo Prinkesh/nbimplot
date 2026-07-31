@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import html
+import importlib.metadata
 import inspect
 import itertools
 import json
@@ -96,6 +98,8 @@ class _SeriesMeta:
     marker: int = _SERIES_MARKER_NONE
     marker_size: float = 4.0
     hidden: bool = False
+    x_kind: str = "linear"
+    x_labels: list[str] | None = None
     stream_capacity: int | None = None
     stream_paused: bool = False
     stream_auto_render: bool = False
@@ -106,6 +110,13 @@ class _SeriesMeta:
 class _PrimitiveMeta:
     content: dict[str, Any]
     buffers: list[np.ndarray]
+
+
+@dataclass(slots=True)
+class _AxisInput:
+    values: np.ndarray
+    kind: str = "linear"
+    labels: list[str] | None = None
 
 
 def _get_wasm_assets() -> tuple[str | None, bytes | None, str | None]:
@@ -245,6 +256,68 @@ def _to_float32_1d(data: Any, *, arg_name: str) -> np.ndarray:
     return out
 
 
+def _is_datetime_like_array(arr: np.ndarray) -> bool:
+    if np.issubdtype(arr.dtype, np.datetime64):
+        return True
+    if arr.dtype.kind not in {"O", "U", "S"} or arr.size == 0:
+        return False
+    sample_count = min(8, int(arr.size))
+    for item in arr.reshape(-1)[:sample_count]:
+        if item is None:
+            return False
+        if hasattr(item, "to_datetime64"):
+            return True
+        if item.__class__.__module__ == "datetime":
+            return True
+    return False
+
+
+def _to_datetime_seconds_float32(data: Any, *, arg_name: str) -> np.ndarray:
+    try:
+        arr = np.asarray(data, dtype="datetime64[ns]")
+    except (TypeError, ValueError) as exc:
+        raise TypeError(f"{arg_name} must contain datetime-like values.") from exc
+    if arr.ndim != 1:
+        raise ValueError(f"{arg_name} must be a 1D array, got {arr.ndim}D.")
+    if arr.size == 0:
+        raise ValueError(f"{arg_name} must not be empty.")
+    if np.isnat(arr).any():
+        raise ValueError(f"{arg_name} must not contain NaT values.")
+    seconds = arr.astype("datetime64[ns]").astype(np.int64).astype(np.float64) / 1_000_000_000.0
+    return np.ascontiguousarray(seconds, dtype=np.float32)
+
+
+def _to_category_axis_float32(data: Any, *, arg_name: str) -> _AxisInput:
+    arr = np.asarray(data)
+    if arr.ndim != 1:
+        raise ValueError(f"{arg_name} must be a 1D array, got {arr.ndim}D.")
+    if arr.size == 0:
+        raise ValueError(f"{arg_name} must not be empty.")
+    labels: list[str] = []
+    positions = np.empty(int(arr.size), dtype=np.float32)
+    seen: dict[str, int] = {}
+    for i, item in enumerate(arr.tolist()):
+        label = "" if item is None else str(item)
+        if label not in seen:
+            seen[label] = len(labels)
+            labels.append(label)
+        positions[i] = float(seen[label])
+    return _AxisInput(np.ascontiguousarray(positions, dtype=np.float32), "category", labels)
+
+
+def _to_axis_float32_1d(data: Any, *, arg_name: str, allow_categorical: bool = True) -> _AxisInput:
+    arr = np.asarray(data)
+    if np.issubdtype(arr.dtype, np.number):
+        values = _to_float32_1d(arr, arg_name=arg_name)
+        return _AxisInput(values, "linear", None)
+    if _is_datetime_like_array(arr):
+        values = _to_datetime_seconds_float32(arr, arg_name=arg_name)
+        return _AxisInput(values, "datetime", None)
+    if allow_categorical and arr.dtype.kind in {"O", "U", "S"}:
+        return _to_category_axis_float32(arr, arg_name=arg_name)
+    raise TypeError(f"{arg_name} must contain numeric, datetime, or categorical values, got {arr.dtype!s}.")
+
+
 def _to_float32_2d(data: Any, *, arg_name: str) -> np.ndarray:
     arr = np.asarray(data)
     if arr.ndim != 2:
@@ -357,14 +430,19 @@ def _normalize_marker_size(value: float) -> float:
 
 
 def _to_line_x(data: Any, *, y_len: int) -> np.ndarray:
-    out = _to_float32_1d(data, arg_name="x")
+    return _to_line_axis_x(data, y_len=y_len).values
+
+
+def _to_line_axis_x(data: Any, *, y_len: int) -> _AxisInput:
+    axis = _to_axis_float32_1d(data, arg_name="x")
+    out = axis.values
     if int(out.size) != int(y_len):
         raise ValueError("x and y must have the same length.")
     if not np.isfinite(out).all():
         raise ValueError("x must contain only finite values.")
     if out.size > 1 and np.any(np.diff(out) < 0):
         raise ValueError("x must be sorted in non-decreasing order for line LOD.")
-    return out
+    return axis
 
 
 class LineHandle:
@@ -592,7 +670,8 @@ class Plot(anywidget.AnyWidget):
 
         x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         data = _to_float32_1d(y_values, arg_name="y")
-        x_data = _to_line_x(x_values, y_len=int(data.size)) if x_values is not None else None
+        x_axis_input = _to_line_axis_x(x_values, y_len=int(data.size)) if x_values is not None else None
+        x_data = x_axis_input.values if x_axis_input is not None else None
         capacity: int | None = None
         if max_points is not None:
             capacity_i = int(max_points)
@@ -623,6 +702,8 @@ class Plot(anywidget.AnyWidget):
             marker=marker_v,
             marker_size=marker_size_v,
             hidden=hidden,
+            x_kind=x_axis_input.kind if x_axis_input is not None else "linear",
+            x_labels=x_axis_input.labels if x_axis_input is not None else None,
             stream_capacity=capacity,
         )
         color_r, color_g, color_b, color_a = (
@@ -652,12 +733,192 @@ class Plot(anywidget.AnyWidget):
             },
             buffers=[memoryview(x_data), memoryview(data)] if x_data is not None else [memoryview(data)],
         )
+        if x_axis_input is not None:
+            self._apply_axis_input(x_axis_code, x_axis_input)
         return LineHandle(
             self,
             series_id=series_id,
             name=name,
             stream_capacity=capacity,
         )
+
+    def lines(
+        self,
+        series: Any = _UNSET,
+        *,
+        x: Any | None = None,
+        y: Any | None = None,
+        names: list[str] | tuple[str, ...] | None = None,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+        colors: Any = None,
+        line_weight: float = 1.0,
+        marker: str = "none",
+        marker_size: float = 4.0,
+        max_points: int | None = None,
+    ) -> list[LineHandle]:
+        """Upload multiple line series in one notebook widget message."""
+        self._ensure_open()
+        subplot_idx = self._validate_subplot_index(subplot_index)
+        x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
+
+        items_raw: list[tuple[str, Any, Any | None, Any | None]] = []
+        if _is_dataframe_like(series):
+            if y is None:
+                raise ValueError("y must be a column name or list of columns when series is dataframe-like.")
+            y_columns = [y] if _is_column_selector(y) else list(y)
+            for column in y_columns:
+                name = str(column)
+                items_raw.append(
+                    (
+                        name,
+                        _dataframe_column(series, column, arg_name="y"),
+                        _resolve_maybe_column(series, x, arg_name="x") if x is not None else None,
+                        None,
+                    )
+                )
+        elif isinstance(series, dict):
+            for key, values in series.items():
+                if isinstance(values, dict) and ("y" in values or "data" in values):
+                    item_y = values.get("y", values.get("data"))
+                    item_x = values.get("x", x)
+                    item_color = values.get("color")
+                    if item_y is None:
+                        raise ValueError("Each dict value passed to lines() must include 'y' or 'data'.")
+                    items_raw.append((str(key), item_y, item_x, item_color))
+                else:
+                    items_raw.append((str(key), values, x, None))
+        elif series is not _UNSET:
+            for idx, item in enumerate(series):
+                if isinstance(item, dict):
+                    item_name = item.get("name", names[idx] if names and idx < len(names) else f"series_{idx}")
+                    item_y = item.get("y", item.get("data"))
+                    item_x = item.get("x", x)
+                    item_color = item.get("color")
+                    if item_y is None:
+                        raise ValueError("Each dict item passed to lines() must include 'y' or 'data'.")
+                    items_raw.append((str(item_name), item_y, item_x, item_color))
+                    continue
+                if not isinstance(item, (tuple, list)) or len(item) not in {2, 3}:
+                    raise TypeError("lines() sequence items must be (name, y), (name, x, y), or dicts.")
+                if len(item) == 2:
+                    item_name, item_y = item
+                    item_x = x
+                else:
+                    item_name, item_x, item_y = item
+                items_raw.append((str(item_name), item_y, item_x, None))
+        else:
+            raise TypeError("lines() requires a mapping, dataframe-like object, or sequence of series.")
+
+        if names is not None:
+            if len(names) != len(items_raw):
+                raise ValueError("names length must match the number of uploaded series.")
+            items_raw = [(str(names[i]), item[1], item[2], item[3]) for i, item in enumerate(items_raw)]
+        if not items_raw:
+            raise ValueError("lines() requires at least one series.")
+
+        color_list: list[Any] | None = None
+        if colors is not None and not isinstance(colors, str):
+            try:
+                color_candidate = list(colors)
+            except TypeError:
+                color_candidate = []
+            single_rgba = len(color_candidate) in {3, 4} and all(
+                isinstance(v, (int, float, np.integer, np.floating)) for v in color_candidate
+            )
+            if not single_rgba and len(color_candidate) == len(items_raw):
+                color_list = color_candidate
+
+        capacity: int | None = None
+        if max_points is not None:
+            capacity_i = int(max_points)
+            if capacity_i <= 0:
+                raise ValueError("max_points must be > 0 when provided.")
+            capacity = capacity_i
+
+        hidden = bool(self._consume_hide_next_item())
+        line_weight_v = _normalize_line_weight(line_weight)
+        marker_v = _parse_marker(marker)
+        marker_size_v = _normalize_marker_size(marker_size)
+        buffers: list[np.ndarray] = []
+        batch_items: list[dict[str, Any]] = []
+        handles: list[LineHandle] = []
+        pending_axis_inputs: list[_AxisInput] = []
+
+        for idx, (name, y_values, x_values, item_color) in enumerate(items_raw):
+            if not isinstance(name, str) or not name.strip():
+                raise ValueError("Each series name must be a non-empty string.")
+            data_arr = _to_float32_1d(y_values, arg_name="y")
+            x_axis_input = _to_line_axis_x(x_values, y_len=int(data_arr.size)) if x_values is not None else None
+            x_data = x_axis_input.values if x_axis_input is not None else None
+            if capacity is not None and data_arr.size > int(capacity):
+                data_arr = data_arr[-int(capacity) :].copy()
+                if x_data is not None:
+                    x_data = x_data[-int(capacity) :].copy()
+
+            chosen_color = color_list[idx] if color_list is not None else (item_color if item_color is not None else colors)
+            color_rgba = _normalize_rgba(chosen_color)
+            color_r, color_g, color_b, color_a = (
+                color_rgba if color_rgba is not None else (0.0, 0.0, 0.0, 0.0)
+            )
+            series_id = f"s{next(self._series_counter)}"
+            self._series[series_id] = _SeriesMeta(
+                name=name,
+                length=int(data_arr.size),
+                dtype="float32",
+                data=data_arr,
+                x_data=x_data,
+                subplot_index=subplot_idx,
+                x_axis=int(x_axis_code),
+                y_axis=int(y_axis_code),
+                color=color_rgba,
+                line_weight=line_weight_v,
+                marker=marker_v,
+                marker_size=marker_size_v,
+                hidden=hidden,
+                x_kind=x_axis_input.kind if x_axis_input is not None else "linear",
+                x_labels=x_axis_input.labels if x_axis_input is not None else None,
+                stream_capacity=capacity,
+            )
+            buffer_index = len(buffers)
+            if x_data is not None:
+                buffers.append(x_data)
+            buffers.append(data_arr)
+            batch_items.append(
+                {
+                    "series_id": series_id,
+                    "name": name,
+                    "subplot_index": subplot_idx,
+                    "x_axis": int(x_axis_code),
+                    "y_axis": int(y_axis_code),
+                    "dtype": "float32",
+                    "length": int(data_arr.size),
+                    "has_x": bool(x_data is not None),
+                    "buffer_index": int(buffer_index),
+                    "has_color": bool(color_rgba is not None),
+                    "color_r": float(color_r),
+                    "color_g": float(color_g),
+                    "color_b": float(color_b),
+                    "color_a": float(color_a),
+                    "line_weight": float(line_weight_v),
+                    "marker": int(marker_v),
+                    "marker_size": float(marker_size_v),
+                    "hidden": bool(hidden),
+                    "max_points": 0 if capacity is None else int(capacity),
+                }
+            )
+            if x_axis_input is not None:
+                pending_axis_inputs.append(x_axis_input)
+            handles.append(LineHandle(self, series_id=series_id, name=name, stream_capacity=capacity))
+
+        self.send(
+            {"type": "lines", "items": batch_items},
+            buffers=[memoryview(buffer) for buffer in buffers],
+        )
+        for axis_input in pending_axis_inputs:
+            self._apply_axis_input(x_axis_code, axis_input)
+        return handles
 
     def stream_line(
         self,
@@ -747,10 +1008,13 @@ class Plot(anywidget.AnyWidget):
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
         buffers: list[np.ndarray] = [values_y, values_sizes]
         if has_x:
-            values_x = _to_float32_1d(x_values, arg_name="x")
+            x_axis_input = _to_axis_float32_1d(x_values, arg_name="x")
+            values_x = x_axis_input.values
             if values_x.size != values_y.size:
                 raise ValueError("x, y, and sizes must have the same length.")
             buffers.insert(0, values_x)
+        else:
+            x_axis_input = None
         self._send_primitive(
             {
                 "type": "primitive_add",
@@ -764,6 +1028,8 @@ class Plot(anywidget.AnyWidget):
             },
             buffers,
         )
+        if x_axis_input is not None:
+            self._apply_axis_input(x_axis_code, x_axis_input)
 
     def stairs(
         self,
@@ -912,11 +1178,8 @@ class Plot(anywidget.AnyWidget):
             x_values = _resolve_maybe_column(data, x, arg_name="x")
         y_values = _resolve_maybe_column(data, y, arg_name="y") if y is not None else None
         values_x = _to_float32_1d(x_values, arg_name="x")
-        values_y = (
-            _to_float32_1d(y_values, arg_name="y")
-            if y_values is not None
-            else np.arange(values_x.size, dtype=np.float32)
-        )
+        y_axis_input = _to_axis_float32_1d(y_values, arg_name="y") if y_values is not None else None
+        values_y = y_axis_input.values if y_axis_input is not None else np.arange(values_x.size, dtype=np.float32)
         if values_x.size != values_y.size:
             raise ValueError("x and y must have the same length.")
         self._send_primitive(
@@ -932,6 +1195,8 @@ class Plot(anywidget.AnyWidget):
             },
             [values_x, values_y],
         )
+        if y_axis_input is not None:
+            self._apply_axis_input(y_axis_code, y_axis_input)
 
     def shaded(
         self,
@@ -966,10 +1231,13 @@ class Plot(anywidget.AnyWidget):
         buffers: list[np.ndarray] = [values_y1, values_y2]
         has_x = x_values is not None
         if has_x:
-            values_x = _to_float32_1d(x_values, arg_name="x")
+            x_axis_input = _to_axis_float32_1d(x_values, arg_name="x")
+            values_x = x_axis_input.values
             if values_x.size != values_y1.size:
                 raise ValueError("x and y arrays must have the same length.")
             buffers.insert(0, values_x)
+        else:
+            x_axis_input = None
         self._send_primitive(
             {
                 "type": "primitive_add",
@@ -984,6 +1252,8 @@ class Plot(anywidget.AnyWidget):
             },
             buffers,
         )
+        if x_axis_input is not None:
+            self._apply_axis_input(x_axis_code, x_axis_input)
 
     def error_bars(
         self,
@@ -1031,10 +1301,13 @@ class Plot(anywidget.AnyWidget):
             buffers = [values_y, values_err]
         has_x = x_values is not None
         if has_x:
-            values_x = _to_float32_1d(x_values, arg_name="x")
+            x_axis_input = _to_axis_float32_1d(x_values, arg_name="x")
+            values_x = x_axis_input.values
             if values_x.size != values_y.size:
                 raise ValueError("x and y arrays must have the same length.")
             buffers.insert(0, values_x)
+        else:
+            x_axis_input = None
         self._send_primitive(
             {
                 "type": "primitive_add",
@@ -1049,6 +1322,8 @@ class Plot(anywidget.AnyWidget):
             },
             buffers,
         )
+        if x_axis_input is not None:
+            self._apply_axis_input(x_axis_code, x_axis_input)
 
     def error_bars_h(
         self,
@@ -1101,11 +1376,8 @@ class Plot(anywidget.AnyWidget):
             if values_x.size != values_err.size:
                 raise ValueError("x and err must have the same length.")
         y_values = _resolve_maybe_column(data, y, arg_name="y") if y is not None else None
-        values_y = (
-            _to_float32_1d(y_values, arg_name="y")
-            if y_values is not None
-            else np.arange(values_x.size, dtype=np.float32)
-        )
+        y_axis_input = _to_axis_float32_1d(y_values, arg_name="y") if y_values is not None else None
+        values_y = y_axis_input.values if y_axis_input is not None else np.arange(values_x.size, dtype=np.float32)
         if values_x.size != values_y.size:
             raise ValueError("x and y must have the same length.")
         self._send_primitive(
@@ -1121,6 +1393,8 @@ class Plot(anywidget.AnyWidget):
             },
             [values_x, values_err, values_y],
         )
+        if y_axis_input is not None:
+            self._apply_axis_input(y_axis_code, y_axis_input)
 
     def inf_lines(
         self,
@@ -1133,10 +1407,11 @@ class Plot(anywidget.AnyWidget):
         y_axis: str = "y1",
     ) -> None:
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
-        vals = _to_float32_1d(values, arg_name="values")
         axis_norm = axis.lower()
         if axis_norm not in {"x", "y"}:
             raise ValueError("axis must be 'x' or 'y'.")
+        axis_input = _to_axis_float32_1d(values, arg_name="values", allow_categorical=False)
+        vals = axis_input.values
         self._send_primitive(
             {
                 "type": "primitive_add",
@@ -1150,6 +1425,7 @@ class Plot(anywidget.AnyWidget):
             },
             [vals],
         )
+        self._apply_axis_input(x_axis_code if axis_norm == "x" else y_axis_code, axis_input)
 
     def vlines(
         self,
@@ -1404,6 +1680,259 @@ class Plot(anywidget.AnyWidget):
                 "y_axis": int(y_axis_code),
             },
             [flat, np.asarray(tint_rgba, dtype=np.float32)],
+        )
+
+    def candlestick(
+        self,
+        name: str,
+        data: Any = _UNSET,
+        *,
+        x: Any | None = None,
+        open: Any = _UNSET,
+        high: Any = _UNSET,
+        low: Any = _UNSET,
+        close: Any = _UNSET,
+        width: float = 0.6,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+    ) -> None:
+        self._ohlc_like_primitive(
+            "candlestick",
+            name,
+            data,
+            x=x,
+            open=open,
+            high=high,
+            low=low,
+            close=close,
+            width=width,
+            subplot_index=subplot_index,
+            x_axis=x_axis,
+            y_axis=y_axis,
+        )
+
+    def ohlc(
+        self,
+        name: str,
+        data: Any = _UNSET,
+        *,
+        x: Any | None = None,
+        open: Any = _UNSET,
+        high: Any = _UNSET,
+        low: Any = _UNSET,
+        close: Any = _UNSET,
+        width: float = 0.6,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+    ) -> None:
+        self._ohlc_like_primitive(
+            "ohlc",
+            name,
+            data,
+            x=x,
+            open=open,
+            high=high,
+            low=low,
+            close=close,
+            width=width,
+            subplot_index=subplot_index,
+            x_axis=x_axis,
+            y_axis=y_axis,
+        )
+
+    def quiver(
+        self,
+        name: str,
+        x: Any,
+        y: Any,
+        u: Any,
+        v: Any,
+        *,
+        scale: float = 1.0,
+        normalize: bool = False,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+    ) -> None:
+        x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
+        x_axis_input = _to_axis_float32_1d(x, arg_name="x")
+        y_axis_input = _to_axis_float32_1d(y, arg_name="y")
+        values_u = _to_float32_1d(u, arg_name="u")
+        values_v = _to_float32_1d(v, arg_name="v")
+        n = int(x_axis_input.values.size)
+        if y_axis_input.values.size != n or values_u.size != n or values_v.size != n:
+            raise ValueError("x, y, u, and v must have the same length.")
+        uv = np.empty(n * 2, dtype=np.float32)
+        uv[0::2] = values_u
+        uv[1::2] = values_v
+        self._send_primitive(
+            {
+                "type": "primitive_add",
+                "kind": "quiver",
+                "name": name,
+                "length": n,
+                "scale": float(scale),
+                "normalize": bool(normalize),
+                "subplot_index": self._validate_subplot_index(subplot_index),
+                "x_axis": int(x_axis_code),
+                "y_axis": int(y_axis_code),
+            },
+            [x_axis_input.values, y_axis_input.values, uv],
+        )
+        self._apply_axis_input(x_axis_code, x_axis_input)
+        self._apply_axis_input(y_axis_code, y_axis_input)
+
+    def contour(
+        self,
+        name: str,
+        z: Any,
+        *,
+        levels: int | Any = 10,
+        bounds: tuple[tuple[float, float], tuple[float, float]] | None = None,
+        line_weight: float = 1.0,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+    ) -> None:
+        x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
+        arr = _to_float32_2d(z, arg_name="z")
+        rows, cols = int(arr.shape[0]), int(arr.shape[1])
+        if bounds is None:
+            x_min, y_min = 0.0, 0.0
+            x_max, y_max = float(cols - 1 if cols > 1 else cols)
+        else:
+            if not isinstance(bounds, (tuple, list)) or len(bounds) != 2:
+                raise ValueError("bounds must be ((x_min, y_min), (x_max, y_max)).")
+            x_min, y_min = _to_float2(bounds[0], arg_name="bounds[0]")
+            x_max, y_max = _to_float2(bounds[1], arg_name="bounds[1]")
+        if x_max == x_min or y_max == y_min:
+            raise ValueError("bounds min/max must span a non-zero range.")
+        if isinstance(levels, (int, np.integer)):
+            level_count = int(levels)
+            if level_count <= 0:
+                raise ValueError("levels must be > 0.")
+            level_values = np.empty(0, dtype=np.float32)
+        else:
+            level_values = _to_float32_1d(levels, arg_name="levels")
+            level_count = int(level_values.size)
+        self._send_primitive(
+            {
+                "type": "primitive_add",
+                "kind": "contour",
+                "name": name,
+                "rows": rows,
+                "cols": cols,
+                "levels": level_count,
+                "bounds_x_min": float(x_min),
+                "bounds_x_max": float(x_max),
+                "bounds_y_min": float(y_min),
+                "bounds_y_max": float(y_max),
+                "line_weight": float(line_weight),
+                "subplot_index": self._validate_subplot_index(subplot_index),
+                "x_axis": int(x_axis_code),
+                "y_axis": int(y_axis_code),
+            },
+            [arr.reshape(-1), level_values],
+        )
+
+    def waterfall(
+        self,
+        name: str,
+        z: Any,
+        *,
+        x: Any | None = None,
+        y_offsets: Any | None = None,
+        scale: float = 1.0,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+    ) -> None:
+        x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
+        arr = _to_float32_2d(z, arg_name="z")
+        rows, cols = int(arr.shape[0]), int(arr.shape[1])
+        x_axis_input = _to_axis_float32_1d(x, arg_name="x") if x is not None else None
+        if x_axis_input is not None and x_axis_input.values.size != cols:
+            raise ValueError("x length must match z.shape[1].")
+        offsets = _to_float32_1d(y_offsets, arg_name="y_offsets") if y_offsets is not None else np.empty(0, dtype=np.float32)
+        if offsets.size not in {0, rows}:
+            raise ValueError("y_offsets length must match z.shape[0].")
+        self._send_primitive(
+            {
+                "type": "primitive_add",
+                "kind": "waterfall",
+                "name": name,
+                "rows": rows,
+                "cols": cols,
+                "has_x": bool(x_axis_input is not None),
+                "scale": float(scale),
+                "subplot_index": self._validate_subplot_index(subplot_index),
+                "x_axis": int(x_axis_code),
+                "y_axis": int(y_axis_code),
+            },
+            [
+                arr.reshape(-1),
+                x_axis_input.values if x_axis_input is not None else np.empty(0, dtype=np.float32),
+                offsets,
+            ],
+        )
+        if x_axis_input is not None:
+            self._apply_axis_input(x_axis_code, x_axis_input)
+
+    def spectrogram(
+        self,
+        name: str,
+        z: Any,
+        *,
+        bounds: tuple[tuple[float, float], tuple[float, float]] | None = None,
+        label_fmt: str | None = "",
+        scale_min: float | None = None,
+        scale_max: float | None = None,
+        heatmap_flags: int = 0,
+        show_colorbar: bool = True,
+        colorbar_label: str | None = "",
+        colorbar_format: str | None = "%g",
+        colorbar_flags: int = 0,
+        subplot_index: int = 0,
+        x_axis: str = "x1",
+        y_axis: str = "y1",
+    ) -> None:
+        x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
+        arr = _to_float32_2d(z, arg_name="z")
+        rows, cols = int(arr.shape[0]), int(arr.shape[1])
+        if bounds is None:
+            x_min, y_min = 0.0, 0.0
+            x_max, y_max = float(cols), float(rows)
+        else:
+            if not isinstance(bounds, (tuple, list)) or len(bounds) != 2:
+                raise ValueError("bounds must be ((x_min, y_min), (x_max, y_max)).")
+            x_min, y_min = _to_float2(bounds[0], arg_name="bounds[0]")
+            x_max, y_max = _to_float2(bounds[1], arg_name="bounds[1]")
+        self._send_primitive(
+            {
+                "type": "primitive_add",
+                "kind": "spectrogram",
+                "name": name,
+                "rows": rows,
+                "cols": cols,
+                "label_fmt": None if label_fmt is None else str(label_fmt),
+                "scale_min": None if scale_min is None else float(scale_min),
+                "scale_max": None if scale_max is None else float(scale_max),
+                "heatmap_flags": int(heatmap_flags),
+                "show_colorbar": bool(show_colorbar),
+                "colorbar_label": "" if colorbar_label is None else str(colorbar_label),
+                "colorbar_format": "%g" if colorbar_format is None else str(colorbar_format),
+                "colorbar_flags": int(colorbar_flags),
+                "bounds_x_min": float(x_min),
+                "bounds_x_max": float(x_max),
+                "bounds_y_min": float(y_min),
+                "bounds_y_max": float(y_max),
+                "subplot_index": self._validate_subplot_index(subplot_index),
+                "x_axis": int(x_axis_code),
+                "y_axis": int(y_axis_code),
+            },
+            [arr.reshape(-1)],
         )
 
     def pie_chart(
@@ -2332,6 +2861,24 @@ class Plot(anywidget.AnyWidget):
             "axis_links": {str(k): v for k, v in self._axis_links.items()},
             "series": [],
         }
+        if include_data:
+            state["axis_ticks"] = {
+                str(axis): {
+                    "ticks": ticks.tolist(),
+                    "labels": list(labels),
+                    "keep_default": bool(keep_default),
+                }
+                for axis, (ticks, labels, keep_default) in self._axis_ticks.items()
+            }
+            state["axis_limits_constraints"] = {
+                str(axis): {"enabled": bool(enabled), "min": float(vmin), "max": float(vmax)}
+                for axis, (enabled, vmin, vmax) in self._axis_limits_constraints.items()
+            }
+            state["axis_zoom_constraints"] = {
+                str(axis): {"enabled": bool(enabled), "min": float(zmin), "max": float(zmax)}
+                for axis, (enabled, zmin, zmax) in self._axis_zoom_constraints.items()
+            }
+            state["primitives"] = []
         for series_id, meta in self._series.items():
             item: dict[str, Any] = {
                 "series_id": series_id,
@@ -2346,12 +2893,25 @@ class Plot(anywidget.AnyWidget):
                 "stream_auto_render": bool(meta.stream_auto_render),
                 "stream_autoscale_y": bool(meta.stream_autoscale_y),
                 "has_x": meta.x_data is not None,
+                "x_kind": meta.x_kind,
+                "x_labels": list(meta.x_labels or []),
             }
             if include_data:
                 item["y"] = meta.data.tolist()
                 if meta.x_data is not None:
                     item["x"] = meta.x_data.tolist()
             state["series"].append(item)
+        if include_data:
+            for meta in self._primitives.values():
+                content = dict(meta.content)
+                content.pop("primitive_id", None)
+                state["primitives"].append(
+                    {
+                        "kind": content.get("kind", ""),
+                        "payload": content,
+                        "buffers": [buffer.tolist() for buffer in meta.buffers],
+                    }
+                )
         return state
 
     @staticmethod
@@ -2409,6 +2969,30 @@ class Plot(anywidget.AnyWidget):
             self.set_axis_format(self._axis_name(int(axis)), str(fmt))
         for axis, target in (state.get("axis_links") or {}).items():
             self.set_axis_link(self._axis_name(int(axis)), self._axis_name(int(target)))
+        for axis, cfg in (state.get("axis_ticks") or {}).items():
+            if isinstance(cfg, dict):
+                self.set_axis_ticks(
+                    self._axis_name(int(axis)),
+                    cfg.get("ticks", []),
+                    labels=cfg.get("labels", []),
+                    keep_default=bool(cfg.get("keep_default", cfg.get("keepDefault", False))),
+                )
+        for axis, cfg in (state.get("axis_limits_constraints") or {}).items():
+            if isinstance(cfg, dict):
+                self.set_axis_limits_constraints(
+                    self._axis_name(int(axis)),
+                    cfg.get("min"),
+                    cfg.get("max"),
+                    enabled=bool(cfg.get("enabled", True)),
+                )
+        for axis, cfg in (state.get("axis_zoom_constraints") or {}).items():
+            if isinstance(cfg, dict):
+                self.set_axis_zoom_constraints(
+                    self._axis_name(int(axis)),
+                    cfg.get("min"),
+                    cfg.get("max"),
+                    enabled=bool(cfg.get("enabled", True)),
+                )
         aligned = state.get("aligned_group")
         if isinstance(aligned, dict):
             self.set_aligned_group(
@@ -2460,6 +3044,18 @@ class Plot(anywidget.AnyWidget):
             )
             if item.get("stream_paused"):
                 handle.pause()
+        for item in state.get("primitives", []):
+            if not isinstance(item, dict):
+                continue
+            payload = dict(item.get("payload") or item)
+            if "kind" not in payload and item.get("kind"):
+                payload["kind"] = item["kind"]
+            if not payload.get("kind"):
+                continue
+            payload["type"] = "primitive_add"
+            payload.pop("primitive_id", None)
+            buffers = [np.asarray(buffer, dtype=np.float32) for buffer in item.get("buffers", [])]
+            self._send_primitive(payload, buffers)
 
     def export_json_state(
         self,
@@ -2471,6 +3067,103 @@ class Plot(anywidget.AnyWidget):
         if filename is not None:
             pathlib.Path(filename).write_text(text, encoding="utf-8")
         return text
+
+    def export_html(
+        self,
+        filename: str | pathlib.Path | None = None,
+        *,
+        title: str | None = None,
+        include_data: bool = True,
+        runtime_url: str | None = None,
+    ) -> str:
+        """Export a data-contained HTML file that restores the plot with @nbimplot/web."""
+        state = self.get_state(include_data=include_data)
+        try:
+            version = importlib.metadata.version("nbimplot")
+        except importlib.metadata.PackageNotFoundError:
+            version = "latest"
+        runtime = runtime_url or (
+            "https://esm.sh/@nbimplot/web" if version == "latest" else f"https://esm.sh/@nbimplot/web@{version}"
+        )
+        page_title = html.escape(title or self.title or "nbimplot export")
+        state_json = json.dumps(state, separators=(",", ":"))
+        html_text = f"""<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{page_title}</title>
+  <style>
+    html, body {{ margin: 0; min-height: 100%; background: #071013; color: #e8f2ee; font-family: ui-sans-serif, system-ui, sans-serif; }}
+    main {{ min-height: 100vh; display: grid; place-items: center; padding: 24px; box-sizing: border-box; }}
+    #plot {{ width: min(100%, {int(self.width)}px); }}
+    .error {{ max-width: 760px; padding: 18px 20px; border: 1px solid #ef4444; border-radius: 12px; background: rgba(127, 29, 29, 0.24); }}
+  </style>
+</head>
+<body>
+  <main><div id="plot"></div></main>
+  <script id="nbimplot-state" type="application/json">{state_json}</script>
+  <script type="module">
+    import {{ createPlot }} from "{runtime}";
+
+    const raw = JSON.parse(document.getElementById("nbimplot-state").textContent);
+    const axisArray = (obj, fallback) => {{
+      const out = Array.from({{ length: 6 }}, (_, i) => fallback(i));
+      for (const [axis, cfg] of Object.entries(obj || {{}})) out[Number(axis)] = cfg;
+      return out;
+    }};
+    const state = {{
+      version: raw.version,
+      width: raw.width,
+      height: raw.height,
+      title: raw.title,
+      plotFlags: raw.plot_flags,
+      axisScaleX: raw.axis_scale_x,
+      axisScaleY: raw.axis_scale_y,
+      colormap: raw.colormap,
+      theme: raw.theme,
+      view: raw.view && {{ xMin: raw.view.x_min, xMax: raw.view.x_max, yMin: raw.view.y_min, yMax: raw.view.y_max }},
+      subplots: raw.subplots,
+      alignedGroup: raw.aligned_group && {{ groupId: raw.aligned_group.group_id, enabled: raw.aligned_group.enabled, vertical: raw.aligned_group.vertical }},
+      linkedCrosshair: raw.linked_crosshair && {{ groupId: raw.linked_crosshair.group_id, enabled: raw.linked_crosshair.enabled, axis: raw.linked_crosshair.axis }},
+      axisState: axisArray(raw.axis_state, (i) => ({{ enabled: i === 0 || i === 3, scale: "linear" }})),
+      axisLabels: axisArray(raw.axis_labels, () => ""),
+      axisFormats: axisArray(raw.axis_formats, () => ""),
+      axisLinks: raw.axis_links || {{}},
+      axisTicks: raw.axis_ticks || {{}},
+      axisLimitsConstraints: raw.axis_limits_constraints || {{}},
+      axisZoomConstraints: raw.axis_zoom_constraints || {{}},
+      series: (raw.series || []).map((item) => ({{
+        name: item.name,
+        y: item.y,
+        x: item.x,
+        subplotIndex: item.subplot_index,
+        xAxis: item.x_axis,
+        yAxis: item.y_axis,
+        capacity: item.stream_capacity || 0,
+        visible: !item.hidden,
+        streamPaused: item.stream_paused,
+        streamAutoRender: item.stream_auto_render,
+        streamAutoscaleY: item.stream_autoscale_y,
+        style: item.style || {{}},
+      }})),
+      primitives: raw.primitives || [],
+    }};
+    try {{
+      const plot = await createPlot("#plot", {{ width: raw.width, height: raw.height, title: raw.title, theme: raw.theme || "nbimplot" }});
+      plot.setState(state);
+      plot.render();
+      window.nbimplot = plot;
+    }} catch (err) {{
+      document.querySelector("main").innerHTML = `<section class="error"><h2>nbimplot failed to initialize</h2><pre>${{String(err && err.message || err)}}</pre></section>`;
+    }}
+  </script>
+</body>
+</html>
+"""
+        if filename is not None:
+            pathlib.Path(filename).write_text(html_text, encoding="utf-8")
+        return html_text
 
     def set_linked_crosshair(
         self,
@@ -2544,12 +3237,15 @@ class Plot(anywidget.AnyWidget):
         x_values, y_values = _resolve_xy_inputs(data, x=x, y=y)
         data = _to_float32_1d(y_values, arg_name="y")
         if x_values is not None:
-            x_data = _to_line_x(x_values, y_len=int(data.size))
+            x_axis_input = _to_line_axis_x(x_values, y_len=int(data.size))
+            x_data = x_axis_input.values
         elif meta.x_data is not None:
             if int(data.size) != int(meta.x_data.size):
                 raise ValueError("x must be provided when resizing a custom-x line.")
+            x_axis_input = None
             x_data = meta.x_data
         else:
+            x_axis_input = None
             x_data = None
         if meta.stream_capacity is not None and data.size > int(meta.stream_capacity):
             data = data[-int(meta.stream_capacity) :].copy()
@@ -2565,6 +3261,9 @@ class Plot(anywidget.AnyWidget):
         meta.dtype = "float32"
         meta.data = data
         meta.x_data = x_data
+        if x_axis_input is not None:
+            meta.x_kind = x_axis_input.kind
+            meta.x_labels = x_axis_input.labels
 
         self.send(
             {
@@ -2577,6 +3276,8 @@ class Plot(anywidget.AnyWidget):
             },
             buffers=[memoryview(x_data), memoryview(data)] if x_data is not None else [memoryview(data)],
         )
+        if x_axis_input is not None:
+            self._apply_axis_input(meta.x_axis, x_axis_input)
 
     def _resolve_series_id(self, value: str | LineHandle) -> str:
         if isinstance(value, LineHandle):
@@ -2602,7 +3303,8 @@ class Plot(anywidget.AnyWidget):
         if meta is None:
             raise KeyError(f"Unknown series_id: {series_id}")
         append_data = _to_float32_1d(y, arg_name="y")
-        append_x = _to_line_x(x, y_len=int(append_data.size)) if x is not None else None
+        append_axis_input = _to_line_axis_x(x, y_len=int(append_data.size)) if x is not None else None
+        append_x = append_axis_input.values if append_axis_input is not None else None
         if meta.x_data is not None and append_x is None:
             raise ValueError("x must be provided when appending to a custom-x line series.")
         if meta.x_data is None and append_x is not None:
@@ -2805,6 +3507,13 @@ class Plot(anywidget.AnyWidget):
         if x_code > 2 or y_code < 3:
             raise ValueError("x_axis must be x1/x2/x3 and y_axis must be y1/y2/y3.")
         return x_code, y_code
+
+    def _apply_axis_input(self, axis_code: int, axis_input: _AxisInput) -> None:
+        if axis_input.kind == "datetime":
+            self.set_axis_state(self._axis_name(axis_code), enabled=True, scale="time")
+        elif axis_input.kind == "category" and axis_input.labels:
+            ticks = np.arange(len(axis_input.labels), dtype=np.float32)
+            self.set_axis_ticks(self._axis_name(axis_code), ticks, labels=axis_input.labels, keep_default=False)
 
     def _validate_subplot_index(self, subplot_index: int) -> int:
         idx = int(subplot_index)
@@ -3096,8 +3805,10 @@ class Plot(anywidget.AnyWidget):
         has_x = x is not None
         x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
         buffers: list[np.ndarray] = [values_y]
+        x_axis_input: _AxisInput | None = None
         if has_x:
-            values_x = _to_float32_1d(x, arg_name="x")
+            x_axis_input = _to_axis_float32_1d(x, arg_name="x")
+            values_x = x_axis_input.values
             if values_x.size != values_y.size:
                 raise ValueError("x and y arrays must have the same length.")
             buffers.insert(0, values_x)
@@ -3113,6 +3824,69 @@ class Plot(anywidget.AnyWidget):
         }
         content.update(extra)
         self._send_primitive(content, buffers)
+        if x_axis_input is not None:
+            self._apply_axis_input(x_axis_code, x_axis_input)
+
+    def _ohlc_like_primitive(
+        self,
+        kind: str,
+        name: str,
+        data: Any,
+        *,
+        x: Any | None,
+        open: Any,
+        high: Any,
+        low: Any,
+        close: Any,
+        width: float,
+        subplot_index: int,
+        x_axis: str,
+        y_axis: str,
+    ) -> None:
+        x_axis_code, y_axis_code = self._axes_codes(x_axis, y_axis)
+        if open is _UNSET:
+            if data is _UNSET:
+                raise TypeError("open data is required.")
+            if _is_dataframe_like(data):
+                raise ValueError("open column must be provided when the data argument is a dataframe.")
+            open_values = data
+        else:
+            open_values = _resolve_maybe_column(data, open, arg_name="open")
+        if high is _UNSET or low is _UNSET or close is _UNSET:
+            raise TypeError("high, low, and close data are required.")
+        high_values = _resolve_maybe_column(data, high, arg_name="high")
+        low_values = _resolve_maybe_column(data, low, arg_name="low")
+        close_values = _resolve_maybe_column(data, close, arg_name="close")
+        open_arr = _to_float32_1d(open_values, arg_name="open")
+        high_arr = _to_float32_1d(high_values, arg_name="high")
+        low_arr = _to_float32_1d(low_values, arg_name="low")
+        close_arr = _to_float32_1d(close_values, arg_name="close")
+        n = int(open_arr.size)
+        if high_arr.size != n or low_arr.size != n or close_arr.size != n:
+            raise ValueError("open, high, low, and close must have the same length.")
+        x_values = _resolve_maybe_column(data, x, arg_name="x") if x is not None else np.arange(n, dtype=np.float32)
+        x_axis_input = _to_axis_float32_1d(x_values, arg_name="x", allow_categorical=False)
+        if x_axis_input.values.size != n:
+            raise ValueError("x and OHLC arrays must have the same length.")
+        packed = np.empty(n * 3, dtype=np.float32)
+        packed[0::3] = high_arr
+        packed[1::3] = low_arr
+        packed[2::3] = close_arr
+        self._send_primitive(
+            {
+                "type": "primitive_add",
+                "kind": kind,
+                "name": name,
+                "length": n,
+                "has_x": True,
+                "width": float(width),
+                "subplot_index": self._validate_subplot_index(subplot_index),
+                "x_axis": int(x_axis_code),
+                "y_axis": int(y_axis_code),
+            },
+            [x_axis_input.values, open_arr, packed],
+        )
+        self._apply_axis_input(x_axis_code, x_axis_input)
 
     def _send_primitive(self, content: dict[str, Any], buffers: list[np.ndarray]) -> None:
         self._ensure_open()
@@ -3135,6 +3909,7 @@ class _SubplotProxy:
 
     _ROUTED_METHODS = {
         "line",
+        "lines",
         "stream_line",
         "scatter",
         "bubbles",
@@ -3154,6 +3929,12 @@ class _SubplotProxy:
         "histogram2d",
         "heatmap",
         "image",
+        "candlestick",
+        "ohlc",
+        "quiver",
+        "contour",
+        "waterfall",
+        "spectrogram",
         "pie_chart",
         "text",
         "annotation",
